@@ -15,6 +15,7 @@ from openff.toolkit.topology.molecule import Molecule, Atom
 from openff.toolkit.typing.engines.smirnoff import ForceField
 from openff.toolkit.typing.engines.smirnoff import parameters as offtk_parameters
 from openff.toolkit.utils.toolkits import RDKitToolkitWrapper, OpenEyeToolkitWrapper, AmberToolsToolkitWrapper
+
 TOOLKITS = { # for convenience of reference
     'rdkit' : RDKitToolkitWrapper,
     'openeye' : OpenEyeToolkitWrapper,
@@ -25,23 +26,20 @@ TOOLKITS = { # for convenience of reference
 def generate_molecule_charges(mol : Molecule, toolkit_method : str='openeye', partial_charge_method : str='am1bcc') -> Molecule:
     '''Takes a Molecule object and computes partial charges with AM1BCC using toolkit method of choice. Returns charged molecule'''
     tk_reg = TOOLKITS.get(toolkit_method)()
-    mol.assign_partial_charges( # finally, assign partial charges using those 10 conformers generated 
+    mol.assign_partial_charges( 
         partial_charge_method=partial_charge_method, 
         toolkit_registry=tk_reg
     )
     charged_mol = mol # rename for clarity
-    # get some conformers to run elf10 charge method. By default, `mol.assign_partial_charges`
-    # uses 500 conformers, but we can generate and use 10 here for demonstration
-    # charged_mol.generate_conformers(
-    #     n_conformers=10,
+    
+    # charged_mol.generate_conformers( # get some conformers to run elf10 charge method. By default, `mol.assign_partial_charges`...
+    #     n_conformers=10,             # ...uses 500 conformers, but we can generate and use 10 here for demonstration
     #     rms_cutoff=0.25 * unit.angstrom,
     #     make_carboxylic_acids_cis=True,
     #     toolkit_registry=tk_reg
     # ) # very slow for large polymers! 
+    # print(f'final molecular charges: {charged_mol.partial_charges}')     # note: the charged_mol has metadata about which monomers were assigned where as a result of the chemicaly info assignment.
 
-    # print(f'final molecular charges: {charged_mol.partial_charges}')
-    # note: the charged_mol has metadata about which monomers were assigned where as a result of the chemicaly info assignment.
-    # This can be a way to break up the molecule into repeating sections to partition the library charges 
     for atom in charged_mol.atoms:
         assert(atom.metadata['already_matched'] == True)
     

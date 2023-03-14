@@ -4,7 +4,7 @@ from .solvation import packmol_solvate_wrapper
 from .solvents import Solvent
 
 # Typing and Subclassing
-from typing import ClassVar, Optional
+from typing import Any, Callable, ClassVar, Optional
 from dataclasses import dataclass, field
 
 # File I/O
@@ -98,7 +98,7 @@ class PolymerDir:
         with checkpoint_path.open('rb') as checkpoint_file:
             return pickle.load(checkpoint_file)
         
-# PROPERTIES AND ATTRIBUTE CALCULATIONS
+# STRUCTURE FILE PROPERTIES
     @property
     def monomer_file_ranked(self):
         '''Choose monomer file from those available according to a ranked priority - returns Nonetype if no files are specified'''
@@ -118,6 +118,7 @@ class PolymerDir:
     def has_structure_data(self) -> bool:
         return (self.info.structure_file is not None)
     
+# MOLECULE PROPERTIES
     @property
     def rdmol(self):
         '''Load an RDKit Molecule object directly from structure file'''
@@ -145,9 +146,14 @@ class PolymerDir:
     @property
     def box_vectors(self):
         '''Dimensions fo the periodic simulation box'''
-        return self.mol_bbox + self.info.exclusion
+        return self.mol_bbox + 2*self.info.exclusion # 2x accounts for the fact that exclusion must occur on either side of the tight bounding box
     
 # SIMULATION
+    @property
+    def completed_sims(self) -> list[Path]:
+        '''Return paths to all non-empty simulation subdirectories'''
+        return [sim_dir for sim_dir in self.MD.iterdir() if not filetree.is_empty(sim_dir)]
+
     def make_res_dir(self, affix : Optional[str]='') -> Path:
         '''Create a new timestamped simulation results directory'''
         res_name = f'{affix}{"_" if affix else ""}{general.timestamp_now()}'
@@ -155,10 +161,12 @@ class PolymerDir:
         res_dir.mkdir(exist_ok=False) # will raise FileExistsError in case of overlap
         return res_dir
     
-    def _purge_sims(self) -> None:
+    def _purge_sims(self, really : bool=False) -> None:
         '''Empties all extant simulation folders - MAKE SURE YOU KNOW WHAT YOU'RE DOING HERE'''
+        if not really:
+            raise PermissionError('Please confirm that you really want to clear simulation directories (this can\'t be undone!)')
         filetree.clear_dir(self.MD)
-    
+
 # FILE POPULATION AND MANAGEMENT
     def populate_mol_files(self, source_dir : Path) -> None:
         '''
@@ -222,3 +230,69 @@ class PolymerDir:
         solvated_dir.to_file() # ensure data is written to disk
         
         return solvated_dir
+    
+class PolymerDirManager:
+    '''Class for organizing, loading, and manipulating collections of PolymerDir objects'''
+    def __init__(self, collection_dir : Path):
+        self.collection_dir : Path = collection_dir
+        self.mol_dirs_list : list[PolymerDir] = []
+        self.update_mol_dirs() # populate currently extant dirs
+
+    def auto_update(funct) -> Callable[[Any], Optional[Any]]: # NOTE : this deliberately doesn't have a "self" arg!
+        '''Decorator for updating the internal list of PolymerDirs after a function'''
+        def update_fn(self, *args, **kwargs) -> Optional[Any]:
+            ret_val = funct(self, *args, **kwargs) # need temporary value so update call can be made before returning
+            self.update_mol_dirs(return_missing=False)
+            return ret_val
+        return update_fn
+
+    def update_mol_dirs(self, return_missing : bool=False) -> Optional[list[Path]]:
+        '''
+        Load existing polymer directories from target directory into memory
+        Return a list of the checkpoint patfhs which contain faulty/no data
+        '''
+        found_mol_dirs, missing_chk_data = [], []
+        for checkpoint_file in self.collection_dir.glob('**/*_checkpoint.pkl'):
+            try:
+                found_mol_dirs.append( PolymerDir.from_file(checkpoint_file) )
+            except EOFError:
+                missing_chk_data.append(checkpoint_file)
+                # print(f'Missing checkpoint file info in {mol_dir}') # TODO : find better way to log this
+        self.mol_dirs_list = found_mol_dirs # avoiding direct append ensures no double-counting if run multiple times (starts with empty list each time)
+
+        if return_missing:
+            return missing_chk_data
+        
+    @property
+    def mol_dirs(self) -> dict[str, PolymerDir]:
+        '''
+        Key present PolymerDirs by their molecule name (convenient for applications where frequent name lookup/str manipulation is required)
+        Written as a property in order to generate unique copies of the dict when associating to another variable (prevents shared overwrites)
+        '''
+        return {mol_dir.mol_name : mol_dir for mol_dir in self.mol_dirs_list}
+    
+    @property
+    def all_completed_sims(self) -> dict[str, list[Path]]: 
+        '''Get a dict of currently populated simulation folders itermized by molecule name'''
+        return {
+            mol_name : mol_dir.completed_sims
+                for mol_name, mol_dir in self.mol_dirs.items()
+                    if mol_dir.completed_sims # don't report directories without simulations
+        }
+
+    @auto_update
+    def populate_mol_dirs(self, source_dir : Path) -> None:
+        '''Generate PolymerDirs via files extracted from a lumped PDB/JSON directory'''
+        for pdb_path in source_dir.glob('**/*.pdb'):
+            mol_name = pdb_path.stem
+            parent_dir = self.collection_dir/mol_name
+            parent_dir.mkdir(exist_ok=True)
+
+            mol_dir = PolymerDir(parent_dir, mol_name)
+            mol_dir.populate_mol_files(source_dir=source_dir)
+
+    @auto_update
+    def purge(self, really : bool=False) -> None:
+        if not really:
+            raise PermissionError('Please confirm that you really want to clear all directories (this can\'t be undone!)')
+        filetree.clear_dir(self.collection_dir)
