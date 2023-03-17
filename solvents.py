@@ -17,6 +17,7 @@ class Solvent:
 
     charges : dict[int, float] = field(default=None)
     structure_file : Path      = field(default=None)
+    forcefield_file : Path     = field(default=None)
 
     @property
     def number_density(self) -> float:

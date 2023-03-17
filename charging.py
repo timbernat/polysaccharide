@@ -1,10 +1,12 @@
 # General
 from collections import defaultdict
 from pathlib import Path
+import json
 
 # Typing and class templates
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
+ChargeMap = dict[int, float] # makes typehinting clearer
 
 # Cheminformatics
 import networkx as nx
@@ -15,15 +17,17 @@ from openff.toolkit.topology.molecule import Molecule, Atom
 from openff.toolkit.typing.engines.smirnoff import ForceField
 from openff.toolkit.typing.engines.smirnoff import parameters as offtk_parameters
 from openff.toolkit.utils.toolkits import RDKitToolkitWrapper, OpenEyeToolkitWrapper, AmberToolsToolkitWrapper
+from espaloma_charge.openff_wrapper import EspalomaChargeToolkitWrapper
 
 TOOLKITS = { # for convenience of reference
     'rdkit' : RDKitToolkitWrapper,
     'openeye' : OpenEyeToolkitWrapper,
-    'ambertools' : AmberToolsToolkitWrapper
+    'ambertools' : AmberToolsToolkitWrapper,
+    'espaloma' : EspalomaChargeToolkitWrapper
 }
 
 
-def generate_molecule_charges(mol : Molecule, toolkit_method : str='openeye', partial_charge_method : str='am1bcc') -> Molecule:
+def generate_molecule_charges(mol : Molecule, toolkit_method : str='openeye', partial_charge_method : str='am1bccelf10', force_match : bool=True) -> Molecule:
     '''Takes a Molecule object and computes partial charges with AM1BCC using toolkit method of choice. Returns charged molecule'''
     tk_reg = TOOLKITS.get(toolkit_method)()
     mol.assign_partial_charges( 
@@ -40,15 +44,14 @@ def generate_molecule_charges(mol : Molecule, toolkit_method : str='openeye', pa
     # ) # very slow for large polymers! 
     # print(f'final molecular charges: {charged_mol.partial_charges}')     # note: the charged_mol has metadata about which monomers were assigned where as a result of the chemicaly info assignment.
 
-    for atom in charged_mol.atoms:
-        assert(atom.metadata['already_matched'] == True)
-    
+    if force_match:
+        for atom in charged_mol.atoms:
+            assert(atom.metadata['already_matched'] == True)
+        
     return charged_mol 
 
 
 # charge averaging methods
-ChargeMap = dict[int, float] # makes typehinting clearer
-
 class ChargeDistributionStrategy(ABC):
     '''Interface for defining how excess charge should be distributed within averaged residues
     to ensure an overall net 0 charge for each monomer fragment'''
@@ -62,7 +65,6 @@ class UniformDistributionStrategy(ChargeDistributionStrategy):
     def determine_distribution(self, net_charge : float, base_charges: ChargeMap, struct: nx.Graph) -> ChargeMap:
         charge_offset = net_charge / len(base_charges) # net charge divided evenly amongst atoms (average of averages, effectively)
         return {sub_id : charge_offset for sub_id in base_charges}
-
 
 @dataclass
 class Accumulator:
@@ -154,7 +156,7 @@ def get_averaged_charges(cmol : Molecule, monomer_data : dict[str, dict], distri
 
     atom_id_mapping   = defaultdict(lambda : defaultdict(int))
     res_charge_accums = defaultdict(lambda : defaultdict(Accumulator))
-    for atom in cmol.atoms: # accumulate counts and charge values across matching substructures
+    for atom in cmol.atoms: # accumulate counts and charge values across matching subsftructures
         res_name, res_num     = atom.metadata['residue_name'   ], atom.metadata['residue_number']
         substruct_id, atom_id = atom.metadata['substructure_id'], atom.metadata['pdb_atom_id'   ]
 
@@ -206,6 +208,30 @@ def write_new_library_charges(avgs : list[ChargedResidue], offxml_src : Path, ou
         } 
 
         lc_entry['smirks'] = averaged_res.SMARTS # add SMIRKS string to library charge entry to allow for correct labelling
+        lc_params = offtk_parameters.LibraryChargeHandler.LibraryChargeType(allow_cosmetic_attributes=True, **lc_entry) # must enable cosmetic params for general kwarg passing
+        
+        lc_handler.add_parameter(parameter=lc_params)
+        lib_chgs.append(lc_params)  # record library charges for reference
+    forcefield.to_file(output_path) # write modified library charges to new xml (avoid overwrites in case of mistakes)
+    
+    return forcefield, lib_chgs
+
+def write_new_lib_chgs_from_json(monomer_data : dict[str, dict], offxml_src : Path, output_path : Path) -> tuple[ForceField, list[offtk_parameters.LibraryChargeHandler]]:
+    '''Takes a monomer JSON file (must contain charges!) and a force field XML file and appends Library Charges based on the specified monomers. Outputs to specified output_path'''
+    assert(output_path.suffix == '.offxml') # ensure output path is pointing to correct file type
+    assert(monomer_data.get('charges') is not None) # ensure charge entries are present
+
+    forcefield = ForceField(offxml_src) # simpler to add library charges through forcefield API than to directly write to xml
+
+    lc_handler = forcefield["LibraryCharges"]
+    lib_chgs = [] #  all library charges generated from the averaged charges for each residue
+    for resname, charge_dict in monomer_data['charges'].items(): # ensures no uncharged structure are written as library charges (may be a subset of the monomers structures in the file)
+        lc_entry = { # stringify charges into form usable for library charges
+            f'charge{cid}' : f'{charge} * elementary_charge' 
+                for cid, charge in charge_dict.items()
+        } 
+
+        lc_entry['smirks'] = monomer_data['monomers'][resname] # add SMIRKS string to library charge entry to allow for correct labelling
         lc_params = offtk_parameters.LibraryChargeHandler.LibraryChargeType(allow_cosmetic_attributes=True, **lc_entry) # must enable cosmetic params for general kwarg passing
         
         lc_handler.add_parameter(parameter=lc_params)

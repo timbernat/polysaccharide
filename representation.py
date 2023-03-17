@@ -161,11 +161,12 @@ class PolymerDir:
         res_dir.mkdir(exist_ok=False) # will raise FileExistsError in case of overlap
         return res_dir
     
-    def _purge_sims(self, really : bool=False) -> None:
+    def purge_sims(self, really : bool=False) -> None:
         '''Empties all extant simulation folders - MAKE SURE YOU KNOW WHAT YOU'RE DOING HERE'''
         if not really:
             raise PermissionError('Please confirm that you really want to clear simulation directories (this can\'t be undone!)')
         filetree.clear_dir(self.MD)
+        filetree.clear_dir(self.logs)
 
 # FILE POPULATION AND MANAGEMENT
     def populate_mol_files(self, source_dir : Path) -> None:
@@ -196,9 +197,9 @@ class PolymerDir:
 
         outname = f'{self.mol_name}_solv_{solvent.name}'
         solvated_dir = PolymerDir(parent_dir=self.parent_dir, mol_name=outname)
-        solvated_dir.info.exclusion = exclusion
 
-        box_vectors = self.mol_bbox + exclusion # can't use either dirs "box_vectors" property directly, since the solvated dir has no structure file yet and the old dir may have different exclusion
+        solvated_dir.info.exclusion = exclusion
+        box_vectors = self.mol_bbox + 2*exclusion # can't use either dirs "box_vectors" property directly, since the solvated dir has no structure file yet and the old dir may have different exclusion
         V_box = general.product(box_vectors)
 
         solvated_dir.info.structure_file = packmol_solvate_wrapper( # generate and point to solvated PDB structure
@@ -221,7 +222,6 @@ class PolymerDir:
                 values.update(solvent.monomer_json_data[field])  # specifically, charges will not be written to an uncharged json (which would screw up graph match and load)
 
             new_mono_path = solvated_dir.monomers/f'{outname}.json'
-            new_mono_path.touch()
             with new_mono_path.open('w') as mono_out:
                 json.dump(mono_data, mono_out, indent=4)
             solvated_dir.info.monomer_file = new_mono_path
@@ -292,7 +292,14 @@ class PolymerDirManager:
             mol_dir.populate_mol_files(source_dir=source_dir)
 
     @auto_update
-    def purge(self, really : bool=False) -> None:
+    def purge_dirs(self, really : bool=False) -> None:
         if not really:
             raise PermissionError('Please confirm that you really want to clear all directories (this can\'t be undone!)')
         filetree.clear_dir(self.collection_dir)
+    
+    @auto_update
+    def purge_sims(self, really : bool=False) -> None:
+        if not really:
+            raise PermissionError('Please confirm that you really want to clear all directories (this can\'t be undone!)')
+        for mol_dir in self.mol_dirs_list:
+            mol_dir.purge_sims(really=really)

@@ -72,7 +72,8 @@ def packmol_solvate_wrapper(template_path : Path, polymer_pdb : Path, solvent_pd
     # temp_paths.append(inp_temp)
 
     cmd = f'packmol < ./{inp_temp.name} > packmol_log.txt'
-    subprocess.run(cmd, shell=True, cwd=f'./{str(outdir)}')
+    proc = subprocess.run(cmd, cwd=f'./{str(outdir)}', shell=True)
+    # print(proc)
 
     for temp_path in temp_paths:
         temp_path.unlink() # delete temporary files
