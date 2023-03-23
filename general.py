@@ -1,5 +1,7 @@
 # General imports
 from datetime import datetime
+DATETIME_FMT = '%m-%d-%Y_at_%H-%M-%S_%p' # formatted string which can be used in file names without error
+
 from functools import reduce
 from operator import mul
 
@@ -14,7 +16,7 @@ def product(container : Iterable):
 def iter_len(itera : Iterable):
     '''
     Get size of an iterable object where ordinary len() call is invalid (namely a generator)
-    Note that this will "use up" the generator upon iteration
+    Note that this will "use up" a generator upon iteration
     '''
     return sum(1 for _  in itera)
 
@@ -25,7 +27,9 @@ def sort_dict_by_values(targ_dict : dict, reverse : bool=False) -> dict[Any, Any
             for key in sorted(targ_dict, key=lambda k : targ_dict[k], reverse=reverse)
     }
 
-def timestamp_now() -> str:
-    '''Return a timestamp string with the current date and time
-    Is formatted such that '''
-    return datetime.now().strftime('%m-%d-%Y_at_%H-%M-%S_%p')
+def timestamp_now(fmt_str : str=DATETIME_FMT) -> str:
+    '''
+    Return a string timestamped with the current date and time (at the time of calling)
+    Is formatted such that the resulting string can be safely used in a filename
+    '''
+    return datetime.now().strftime(fmt_str)

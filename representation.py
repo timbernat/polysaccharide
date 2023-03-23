@@ -189,7 +189,7 @@ class PolymerDir:
     
     def solvate(self, template_path : Path, solvent : Solvent, exclusion : float=None, precision : int=4) ->  'PolymerDir':
         '''Applies packmol solvation routine to an extant PolymerDir'''
-        assert(self.has_structure_data) # TODO : clean these check up eventually
+        assert(self.has_structure_data) # TODO : clean these checks up eventually
         assert(solvent.structure_file is not None)
 
         if exclusion is None:
@@ -236,6 +236,9 @@ class PolymerDirManager:
     def __init__(self, collection_dir : Path):
         self.collection_dir : Path = collection_dir
         self.mol_dirs_list : list[PolymerDir] = []
+        self.log_dir = self.collection_dir/'Logs'
+        self.log_dir.mkdir(exist_ok=True)
+        
         self.update_mol_dirs() # populate currently extant dirs
 
     def auto_update(funct) -> Callable[[Any], Optional[Any]]: # NOTE : this deliberately doesn't have a "self" arg!
@@ -291,6 +294,11 @@ class PolymerDirManager:
             mol_dir = PolymerDir(parent_dir, mol_name)
             mol_dir.populate_mol_files(source_dir=source_dir)
 
+    def purge_logs(self, really : bool=False) -> None:
+        if not really:
+            raise PermissionError('Please confirm that you really want to clear all directories (this can\'t be undone!)')
+        filetree.clear_dir(self.log_dir)
+
     @auto_update
     def purge_dirs(self, really : bool=False) -> None:
         if not really:
@@ -303,3 +311,4 @@ class PolymerDirManager:
             raise PermissionError('Please confirm that you really want to clear all directories (this can\'t be undone!)')
         for mol_dir in self.mol_dirs_list:
             mol_dir.purge_sims(really=really)
+        self.purge_logs(really=really)
