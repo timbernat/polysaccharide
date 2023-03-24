@@ -6,7 +6,11 @@ from functools import reduce
 from operator import mul
 
 # Typing and Subclassing
-from typing import Any, Iterable
+from typing import Any, Iterable, Union
+
+# Units
+from pint import Quantity as PintQuantity
+from openmm.unit.quantity import Quantity as OMMQuantity
 
 
 def product(container : Iterable):
@@ -33,3 +37,15 @@ def timestamp_now(fmt_str : str=DATETIME_FMT) -> str:
     Is formatted such that the resulting string can be safely used in a filename
     '''
     return datetime.now().strftime(fmt_str)
+
+def strip_units(coords : Union[tuple, PintQuantity, OMMQuantity]) -> tuple[float]:
+    '''
+    Sanitize coordinate tuples for cases which require unitless quantities
+    Specifically needed since OpenMM and pint each have their own Quantity and Units classes
+    '''
+    if isinstance(coords, PintQuantity):
+        return coords.magnitude
+    elif isinstance(coords, OMMQuantity):
+        return coords._value
+
+    return coords
