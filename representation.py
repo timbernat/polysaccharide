@@ -2,6 +2,7 @@
 from . import general, filetree
 from .solvation import packmol_solvate_wrapper
 from .solvents import Solvent
+from .extratypes import SubstructSummary
 
 # Typing and Subclassing
 from typing import Any, Callable, ClassVar, Optional
@@ -12,8 +13,9 @@ from pathlib import Path
 import json, pickle
 from shutil import copyfile
 
-# Cheminformatics
+# Cheminformatics and MD
 from rdkit import Chem
+from openff.toolkit.topology import Topology
 
 # Units and Quantities
 from openmm.unit import angstrom, nanometer
@@ -98,6 +100,15 @@ class PolymerDir:
         with checkpoint_path.open('rb') as checkpoint_file:
             return pickle.load(checkpoint_file)
         
+    def update_checkpoint(funct) -> Callable[[Any], Optional[Any]]: # NOTE : this deliberately doesn't have a "self" arg!
+        '''Decorator for updating the on-disc checkpoint file after a function updates a PolymerDir attribute'''
+        def update_fn(self, *args, **kwargs) -> Optional[Any]:
+            ret_val = funct(self, *args, **kwargs) # need temporary value so update call can be made before returning
+            self.to_file()
+            return ret_val
+        return update_fn
+
+        
 # STRUCTURE FILE PROPERTIES
     @property
     def monomer_file_ranked(self):
@@ -118,7 +129,7 @@ class PolymerDir:
     def has_structure_data(self) -> bool:
         return (self.info.structure_file is not None)
     
-# MOLECULE PROPERTIES
+# MOLECULE PROPERTIES (RDKit-based)
     @property
     def rdmol(self):
         '''Load an RDKit Molecule object directly from structure file'''
@@ -148,6 +159,12 @@ class PolymerDir:
         '''Dimensions fo the periodic simulation box'''
         return self.mol_bbox + 2*self.info.exclusion # 2x accounts for the fact that exclusion must occur on either side of the tight bounding box
     
+# OpenFF / OpenMM PROPERTIES
+    def openff_topology_matched(self, strict : bool=True, verbose : bool=False) -> tuple[Topology, list[SubstructSummary], bool]:
+        '''Performs a monomer substructure match and returns the resulting OpenFF Topology'''
+        openff_topology, substructs, error_state = Topology.from_pdb_and_monomer_info(str(self.info.structure_file), self.monomer_file_ranked, strict=strict, verbose=verbose)
+        return openff_topology, substructs, error_state # outputs assigned to variable names purely for documentations
+
 # SIMULATION
     @property
     def completed_sims(self) -> list[Path]:
@@ -169,6 +186,7 @@ class PolymerDir:
         filetree.clear_dir(self.logs)
 
 # FILE POPULATION AND MANAGEMENT
+    @update_checkpoint
     def populate_mol_files(self, source_dir : Path) -> None:
         '''
         Populates a PolymerDir with the relevant structural and monomer files from a shared source ("data dump") folder
@@ -184,9 +202,8 @@ class PolymerDir:
             new_monomer_path = self.monomers/monomer_path.name
             copyfile(monomer_path, new_monomer_path)
             self.info.monomer_file = new_monomer_path
-
-        self.to_file() # ensure disk copy is updated appropriately
     
+    @update_checkpoint
     def solvate(self, template_path : Path, solvent : Solvent, exclusion : float=None, precision : int=4) ->  'PolymerDir':
         '''Applies packmol solvation routine to an extant PolymerDir'''
         assert(self.has_structure_data) # TODO : clean these checks up eventually
@@ -227,8 +244,6 @@ class PolymerDir:
             solvated_dir.info.monomer_file = new_mono_path
 
         solvated_dir.info.solvent = solvent # set this only AFTER solvated files have been created
-        solvated_dir.to_file() # ensure data is written to disk
-        
         return solvated_dir
     
 class PolymerDirManager:
