@@ -1,5 +1,6 @@
 # Custom Imports
-from .extratypes import ArrayLike, strip_units
+from .general import strip_units
+from .extratypes import ArrayLike
 from .solvents import Solvent
 
 # File I/O
