@@ -6,7 +6,9 @@ import json
 # Typing and class templates
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
-ChargeMap = dict[int, float] # makes typehinting clearer
+
+ChargeMap = dict[int, float] 
+AtomIDMap = dict[str, dict[int, tuple[int, str]]]
 
 # Cheminformatics
 import networkx as nx
@@ -15,7 +17,7 @@ from rdkit import Chem
 # OpenForceField
 from openff.toolkit.topology.molecule import Molecule, Atom
 from openff.toolkit.typing.engines.smirnoff import ForceField
-from openff.toolkit.typing.engines.smirnoff import parameters as offtk_parameters
+from openff.toolkit.typing.engines.smirnoff.parameters import LibraryChargeHandler
 from openff.toolkit.utils.toolkits import RDKitToolkitWrapper, OpenEyeToolkitWrapper, AmberToolsToolkitWrapper
 from espaloma_charge.openff_wrapper import EspalomaChargeToolkitWrapper
 
@@ -51,7 +53,7 @@ def generate_molecule_charges(mol : Molecule, toolkit_method : str='openeye', pa
     return charged_mol 
 
 
-# charge averaging methods
+# Useful storage and representation classes
 class ChargeDistributionStrategy(ABC):
     '''Interface for defining how excess charge should be distributed within averaged residues
     to ensure an overall net 0 charge for each monomer fragment'''
@@ -93,7 +95,7 @@ class ChargedResidue:
         for sub_id, charge in self.charges.items():
             self.charges[sub_id] = charge - distrib[sub_id] # subtract respective charge offsets from each atom's partial charge
 
-
+# Charge Averaging functions
 def find_repr_residues(cmol : Molecule) -> dict[str, int]:
     '''Determine names and smallest residue numbers of all unique residues in charged molecule
     Used as representatives for generating labelled SMARTS strings '''
@@ -106,44 +108,8 @@ def find_repr_residues(cmol : Molecule) -> dict[str, int]:
 
     return rep_res_nums
 
-def get_averaged_charges_orig(cmol : Molecule, monomer_data : dict[str, dict], distrib_mono_charges : bool=False) -> list[ChargedResidue]:
-    '''Takes a charged molecule and a dict of monomer structure data and averages charges for each repeating residue. 
-    Returns a list of ChargedResidue objects each of which holds:
-        - A dict of the averaged charges by atom 
-        - The name of the residue associated with the charges
-        - A SMARTS string of the residue's structure'''
-    rdmol = cmol.to_rdkit() # create rdkit representation of Molecule to allow for SMARTS generation
-    rep_res_nums = find_repr_residues(cmol) # determine ids of representatives of each unique residue
-
-    atom_ids_for_SMARTS = defaultdict(list)
-    res_charge_accums   = defaultdict(lambda : defaultdict(Accumulator))
-    for atom in cmol.atoms: # accumulate counts and charge values across matching substructures
-        res_name, res_num     = atom.metadata['residue_name']   , atom.metadata['residue_number']
-        substruct_id, atom_id = atom.metadata['substructure_id'], atom.metadata['pdb_atom_id']
-
-        if res_num == rep_res_nums[res_name]: # if atom is member of representative group for any residue...
-            atom_ids_for_SMARTS[res_name].append(atom_id)             # ...collect pdb id...
-            rdmol.GetAtomWithIdx(atom_id).SetAtomMapNum(substruct_id) # ...and set atom number for labelling in SMARTS string
-
-        curr_accum = res_charge_accums[res_name][substruct_id] # accumulate charge info for averaging
-        curr_accum.sum += atom.partial_charge.magnitude # eschew units (easier to handle, added back when writing to XML)
-        curr_accum.count += 1
-
-    avg_charges_by_residue = []
-    for res_name, charge_map in res_charge_accums.items():
-        # SMARTS = rdmolfiles.MolFragmentToSmarts(rdmol, atomsToUse=atom_ids_for_SMARTS[res_name]) # determine SMARTS for the current residue's representative group
-        SMARTS = monomer_data['monomers'][res_name] # extract SMARTS string from monomer data
-        charge_map = {substruct_id : accum.average for substruct_id, accum in charge_map.items()} 
-
-        if distrib_mono_charges: # distribute any excess average charge among monomer atoms to ensure no net charge per monomer
-            chg_offset = sum(avg for avg in charge_map.values()) / len(charge_map)
-            charge_map = {sub_id : avg - chg_offset for sub_id, avg in charge_map.items()}
-        
-        avg_charges_by_residue.append(ChargedResidue(charges=charge_map, residue_name=res_name, SMARTS=SMARTS))
-
-    return avg_charges_by_residue
-
-def get_averaged_charges(cmol : Molecule, monomer_data : dict[str, dict], distrib_mono_charges : bool=True) -> list[ChargedResidue]:
+# -- Current versions of averaging functions
+def get_averaged_charges(cmol : Molecule, monomer_data : dict[str, dict], distrib_mono_charges : bool=True) -> tuple[list[ChargedResidue], AtomIDMap]:
     '''Takes a charged molecule and a dict of monomer SMIRKS strings and averages charges for each repeating residue. 
     Returns a list of ChargedResidue objects, each of which holds:
         - A dict of the averaged charges by atom 
@@ -194,29 +160,7 @@ def get_averaged_charges(cmol : Molecule, monomer_data : dict[str, dict], distri
 
     return avg_charges_by_residue, atom_id_mapping
 
-def write_new_library_charges(avgs : list[ChargedResidue], offxml_src : Path, output_path : Path) -> tuple[ForceField, list[offtk_parameters.LibraryChargeHandler]]:
-    '''Takes dict of residue-averaged charges to generate and append library charges to an .offxml file of choice, creating a new xml with the specified filename'''
-    assert(output_path.suffix == '.offxml') # ensure output path is pointing to correct file type
-    forcefield = ForceField(offxml_src)     # simpler to add library charges through forcefield API than to directly write to xml
-    lc_handler = forcefield["LibraryCharges"]
-
-    lib_chgs = [] #  all library charges generated from the averaged charges for each residue
-    for averaged_res in avgs:
-        lc_entry = { # stringify charges into form usable for library charges
-            f'charge{cid}' : f'{charge} * elementary_charge' # +1 accounts for 1-index to 0-index when going from smirks atom ids to substructure ids
-                for cid, charge in averaged_res.charges.items()
-        } 
-
-        lc_entry['smirks'] = averaged_res.SMARTS # add SMIRKS string to library charge entry to allow for correct labelling
-        lc_params = offtk_parameters.LibraryChargeHandler.LibraryChargeType(allow_cosmetic_attributes=True, **lc_entry) # must enable cosmetic params for general kwarg passing
-        
-        lc_handler.add_parameter(parameter=lc_params)
-        lib_chgs.append(lc_params)  # record library charges for reference
-    forcefield.to_file(output_path) # write modified library charges to new xml (avoid overwrites in case of mistakes)
-    
-    return forcefield, lib_chgs
-
-def write_new_lib_chgs_from_json(monomer_data : dict[str, dict], offxml_src : Path, output_path : Path) -> tuple[ForceField, list[offtk_parameters.LibraryChargeHandler]]:
+def write_new_lib_chgs_from_json(monomer_data : dict[str, dict], offxml_src : Path, output_path : Path) -> tuple[ForceField, list[LibraryChargeHandler]]:
     '''Takes a monomer JSON file (must contain charges!) and a force field XML file and appends Library Charges based on the specified monomers. Outputs to specified output_path'''
     assert(output_path.suffix == '.offxml') # ensure output path is pointing to correct file type
     assert(monomer_data.get('charges') is not None) # ensure charge entries are present
@@ -232,7 +176,67 @@ def write_new_lib_chgs_from_json(monomer_data : dict[str, dict], offxml_src : Pa
         } 
 
         lc_entry['smirks'] = monomer_data['monomers'][resname] # add SMIRKS string to library charge entry to allow for correct labelling
-        lc_params = offtk_parameters.LibraryChargeHandler.LibraryChargeType(allow_cosmetic_attributes=True, **lc_entry) # must enable cosmetic params for general kwarg passing
+        lc_params = LibraryChargeHandler.LibraryChargeType(allow_cosmetic_attributes=True, **lc_entry) # must enable cosmetic params for general kwarg passing
+        
+        lc_handler.add_parameter(parameter=lc_params)
+        lib_chgs.append(lc_params)  # record library charges for reference
+    forcefield.to_file(output_path) # write modified library charges to new xml (avoid overwrites in case of mistakes)
+    
+    return forcefield, lib_chgs
+
+# -- Historic versions of averaging functions
+def get_averaged_charges_orig(cmol : Molecule, monomer_data : dict[str, dict], distrib_mono_charges : bool=False) -> list[ChargedResidue]:
+    '''Takes a charged molecule and a dict of monomer structure data and averages charges for each repeating residue. 
+    Returns a list of ChargedResidue objects each of which holds:
+        - A dict of the averaged charges by atom 
+        - The name of the residue associated with the charges
+        - A SMARTS string of the residue's structure'''
+    rdmol = cmol.to_rdkit() # create rdkit representation of Molecule to allow for SMARTS generation
+    rep_res_nums = find_repr_residues(cmol) # determine ids of representatives of each unique residue
+
+    atom_ids_for_SMARTS = defaultdict(list)
+    res_charge_accums   = defaultdict(lambda : defaultdict(Accumulator))
+    for atom in cmol.atoms: # accumulate counts and charge values across matching substructures
+        res_name, res_num     = atom.metadata['residue_name']   , atom.metadata['residue_number']
+        substruct_id, atom_id = atom.metadata['substructure_id'], atom.metadata['pdb_atom_id']
+
+        if res_num == rep_res_nums[res_name]: # if atom is member of representative group for any residue...
+            atom_ids_for_SMARTS[res_name].append(atom_id)             # ...collect pdb id...
+            rdmol.GetAtomWithIdx(atom_id).SetAtomMapNum(substruct_id) # ...and set atom number for labelling in SMARTS string
+
+        curr_accum = res_charge_accums[res_name][substruct_id] # accumulate charge info for averaging
+        curr_accum.sum += atom.partial_charge.magnitude # eschew units (easier to handle, added back when writing to XML)
+        curr_accum.count += 1
+
+    avg_charges_by_residue = []
+    for res_name, charge_map in res_charge_accums.items():
+        # SMARTS = rdmolfiles.MolFragmentToSmarts(rdmol, atomsToUse=atom_ids_for_SMARTS[res_name]) # determine SMARTS for the current residue's representative group
+        SMARTS = monomer_data['monomers'][res_name] # extract SMARTS string from monomer data
+        charge_map = {substruct_id : accum.average for substruct_id, accum in charge_map.items()} 
+
+        if distrib_mono_charges: # distribute any excess average charge among monomer atoms to ensure no net charge per monomer
+            chg_offset = sum(avg for avg in charge_map.values()) / len(charge_map)
+            charge_map = {sub_id : avg - chg_offset for sub_id, avg in charge_map.items()}
+        
+        avg_charges_by_residue.append(ChargedResidue(charges=charge_map, residue_name=res_name, SMARTS=SMARTS))
+
+    return avg_charges_by_residue
+
+def write_new_library_charges(avgs : list[ChargedResidue], offxml_src : Path, output_path : Path) -> tuple[ForceField, list[LibraryChargeHandler]]:
+    '''Takes dict of residue-averaged charges to generate and append library charges to an .offxml file of choice, creating a new xml with the specified filename'''
+    assert(output_path.suffix == '.offxml') # ensure output path is pointing to correct file type
+    forcefield = ForceField(offxml_src)     # simpler to add library charges through forcefield API than to directly write to xml
+    lc_handler = forcefield["LibraryCharges"]
+
+    lib_chgs = [] #  all library charges generated from the averaged charges for each residue
+    for averaged_res in avgs:
+        lc_entry = { # stringify charges into form usable for library charges
+            f'charge{cid}' : f'{charge} * elementary_charge' # +1 accounts for 1-index to 0-index when going from smirks atom ids to substructure ids
+                for cid, charge in averaged_res.charges.items()
+        } 
+
+        lc_entry['smirks'] = averaged_res.SMARTS # add SMIRKS string to library charge entry to allow for correct labelling
+        lc_params = LibraryChargeHandler.LibraryChargeType(allow_cosmetic_attributes=True, **lc_entry) # must enable cosmetic params for general kwarg passing
         
         lc_handler.add_parameter(parameter=lc_params)
         lib_chgs.append(lc_params)  # record library charges for reference
