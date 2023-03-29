@@ -1,7 +1,6 @@
 # Custom Imports
 from .general import strip_units
 from .extratypes import ArrayLike
-from .solvents import Solvent
 
 # File I/O
 from pathlib import Path
@@ -10,7 +9,50 @@ from shutil import copyfile
 # Logging and Shell
 import subprocess
 
+# Representation imports
+from dataclasses import dataclass, field
+from openmm.unit import mole, AVOGADRO_CONSTANT_NA
 
+
+# Representation classes
+@dataclass
+class Solvent:
+    '''For encapsulating information about solvents'''
+    name    : str
+    formula : str
+    smarts  : str
+
+    density : float
+    MW : float # molecular weight
+
+    charges : dict[int, float] = field(default=None)
+    structure_file : Path      = field(default=None)
+    forcefield_file : Path     = field(default=None)
+
+    @property
+    def number_density(self) -> float:
+        '''
+        Determine the number of solvent molecules per unit volume from known physical constants
+        For best results, provide arguments as Quantities with associated units
+        '''
+        return (self.density / self.MW) * AVOGADRO_CONSTANT_NA
+
+    @property
+    def monomer_json_data(self):
+        '''Generate a monomer-spec-conformant JSON dictionary entry'''
+        return {
+            "monomers": {
+                self.name : self.smarts
+            },
+            "caps": {
+                self.name : []
+            },
+            "charges" : {
+                self.name : self.charges
+            }
+        }
+
+# Packmol wrapper methods
 def populate_solv_inp_template(template_path : Path, outname : str, outdir : Path, polymer_name : str, solvent_name : str, N : int, box_dims : ArrayLike, precision : int=4) -> Path:
     '''
     Function for programmatically generating packmol .inp files for solvating arbitrary polymer in a box of solvent
