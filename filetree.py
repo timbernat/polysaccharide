@@ -10,6 +10,7 @@ from . import general
 
 # Methods
 startfile = lambda path : subprocess.Popen(['xdg-open', path]) # Replacement for os.startfile() functionality, since none natively exists in Linux
+dotless   = lambda suffix : suffix.split('.')[-1] # separate the dot from a SINGLE extension file suffix
 
 def append_to_json(json_path : Path, **kwargs) -> None:
     '''Add an entry to an existing JSON file'''
