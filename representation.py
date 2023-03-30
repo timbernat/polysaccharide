@@ -2,7 +2,8 @@
 from . import general, filetree
 from .solvation import packmol_solvate_wrapper
 from .solvents import Solvent
-from .extratypes import SubstructSummary
+from .charging.types import SubstructSummary, ResidueChargeMap
+from .charging.averaging import write_lib_chgs_from_mono_data
 
 # Typing and Subclassing
 from typing import Any, Callable, ClassVar, Optional
@@ -10,12 +11,14 @@ from dataclasses import dataclass, field
 
 # File I/O
 from pathlib import Path
-import json, pickle
 from shutil import copyfile
+import json, pickle
 
 # Cheminformatics and MD
 from rdkit import Chem
-from openff.toolkit.topology import Topology
+from rdkit.Chem.rdchem import Mol as RDMol
+from openff.toolkit.topology import Topology, Molecule
+from openff.toolkit.typing.engines.smirnoff import ForceField
 
 # Units and Quantities
 from openmm.unit import angstrom, nanometer
@@ -25,15 +28,16 @@ from openmm.unit import angstrom, nanometer
 @dataclass
 class PolymerInfo:
     '''For storing useful info about a Polymer Directory'''
-    mol_name          : str = field(default=None)
-    exclusion         : float = field(default=1*nanometer) # distance between molecule bounding box and simulation box size
-    solvent           : Solvent = field(default=None) # kept default as NoneType rather than '' for more intuitive solvent search with unsolvated molecules
+    mol_name  : str = field(default=None)
+    exclusion : float = field(default=1*nanometer) # distance between molecule bounding box and simulation box size
+    solvent   : Solvent = field(default=None) # kept default as NoneType rather than '' for more intuitive solvent search with unsolvated molecules
 
-    structure_file    : Optional[Path] = field(default=None)
-    monomer_file      : Optional[Path] = field(default=None)
-    monomer_file_chgd : Optional[Path] = field(default=None)
-    pickle_file       : Optional[Path] = field(default=None) # TOSELF : this stores pickled Molecule() objects, NOT pickled PolymerDir() checkpoints
-    ff_file           : Optional[Path] = field(default=None)
+    structure_file      : Optional[Path] = field(default=None) # .PDB
+    structure_file_chgd : Optional[Path] = field(default=None) # .SDF
+    monomer_file        : Optional[Path] = field(default=None) # .JSON
+    monomer_file_chgd   : Optional[Path] = field(default=None) # .JSON
+    pickle_file         : Optional[Path] = field(default=None) # .PKL - TOSELF : this stores pickled Molecule() objects, NOT pickled PolymerDir() checkpoints
+    ff_file             : Optional[Path] = field(default=None) # .OFFXML
 
 @dataclass
 class PolymerDir:
@@ -41,16 +45,16 @@ class PolymerDir:
     parent_dir : Path
     mol_name : str
 
-    path : Path = field(init=False)
-    checkpoint_path : Path = field(init=False)
-    info : PolymerInfo = field(init=False)
+    path            : Path = field(init=False, repr=False)
+    checkpoint_path : Path = field(init=False, repr=False)
+    info     : PolymerInfo = field(init=False)
 
-    subdirs : list[Path] = field(default_factory=list)
-
+    subdirs : list[Path] = field(default_factory=list, repr=False)
     _SUBDIRS : ClassVar[tuple[str, ...]] = ( # directories with these names will be present in all polymer directories by standard
         'structures',
         'monomers',
         'pkl',
+        'SDF',
         'FF',
         'MD',
         'checkpoint',
@@ -87,7 +91,7 @@ class PolymerDir:
         '''
         filetree.clear_dir(self.path)
 
-# FILE I/O
+# CHECKPOINT FILE I/O
     def to_file(self) -> None:
         '''Save directory object to disc - for checkpointing and non-volatility'''
         with self.checkpoint_path.open('wb') as checkpoint_file:
@@ -107,11 +111,10 @@ class PolymerDir:
             self.to_file()
             return ret_val
         return update_fn
-
         
 # STRUCTURE FILE PROPERTIES
     @property
-    def monomer_file_ranked(self):
+    def monomer_file_ranked(self) -> Path:
         '''Choose monomer file from those available according to a ranked priority - returns Nonetype if no files are specified'''
         MONO_PRIORITY_ORDER = ('monomer_file_chgd', 'monomer_file') # NOTE : order here isn't arbitrary, establishes FIFO priority for monomer files - must match named PolymerInfo attributes
 
@@ -122,6 +125,24 @@ class PolymerDir:
             return None
 
     @property
+    def monomer_data(self) -> dict[str, Any]:
+        '''Load monomer information from file'''
+        if self.info.monomer_file is None:
+            raise FileExistsError(f'No monomer file exists for {self.mol_name}')
+
+        with self.info.monomer_file.open('r') as json_file: 
+            return json.load(json_file)
+    
+    @property
+    def monomer_data_charged(self) -> dict[str, Any]:
+        '''Load monomer information with charges from file'''
+        if self.info.monomer_file is None:
+            raise FileExistsError(f'No monomer file with charged exists for {self.mol_name}')
+
+        with self.info.monomer_file_chgd.open('r') as json_file: 
+            return json.load(json_file)
+
+    @property
     def has_monomer_data(self) -> bool:
         return (self.monomer_file_ranked is not None)
 
@@ -129,41 +150,156 @@ class PolymerDir:
     def has_structure_data(self) -> bool:
         return (self.info.structure_file is not None)
     
-# MOLECULE PROPERTIES (RDKit-based)
+# RDKit PROPERTIES 
     @property
-    def rdmol(self):
+    def rdmol_topology(self) -> RDMol:
         '''Load an RDKit Molecule object directly from structure file'''
         return Chem.MolFromPDBFile(str(self.info.structure_file), removeHs=False)
     
     @property
-    def largest_mol(self):
-        '''
-        Return the largest sub-molecule in the structure file Topology
-        Intended to differentiate target molecules from solvent
-        '''
-        return max(Chem.rdmolops.GetMolFrags(self.rdmol, asMols=True), key=lambda mol : mol.GetNumAtoms())
-    mol = largest_mol # alias for simplicity
+    def largest_rdmol(self) -> RDMol:
+        '''Return the largest sub-molecule in the structure file Topology. Intended to differentiate target molecules from solvent'''
+        return max(Chem.rdmolops.GetMolFrags(self.rdmol_topology, asMols=True), key=lambda mol : mol.GetNumAtoms())
+    rdmol = largest_rdmol # alias for simplicity
 
     @property
     def n_atoms(self):
         '''Number of atoms in the main polymer chain (excluding solvent)'''
-        return self.mol.GetNumAtoms()
+        return self.rdmol.GetNumAtoms()
 
     @property
     def mol_bbox(self):
         '''Return the bounding box size (in angstroms) of the molecule represented'''
-        return self.mol.GetConformer().GetPositions().ptp(axis=0) * angstrom
+        return self.rdmol.GetConformer().GetPositions().ptp(axis=0) * angstrom
     
     @property
     def box_vectors(self):
         '''Dimensions fo the periodic simulation box'''
         return self.mol_bbox + 2*self.info.exclusion # 2x accounts for the fact that exclusion must occur on either side of the tight bounding box
     
-# OpenFF / OpenMM PROPERTIES
-    def openff_topology_matched(self, strict : bool=True, verbose : bool=False) -> tuple[Topology, list[SubstructSummary], bool]:
+# OpenFF / OpenMM Attributes
+    def openff_topology_matched(self, strict : bool=True, verbose : bool=False, chgd_monomers : bool=False, topo_only : bool=True) -> tuple[Topology, Optional[list[SubstructSummary]], Optional[bool]]:
         '''Performs a monomer substructure match and returns the resulting OpenFF Topology'''
-        openff_topology, substructs, error_state = Topology.from_pdb_and_monomer_info(str(self.info.structure_file), self.monomer_file_ranked, strict=strict, verbose=verbose)
-        return openff_topology, substructs, error_state # outputs assigned to variable names purely for documentations
+        if chgd_monomers:
+            assert(self.info.monomer_file_chgd.exists())
+            openff_topology, substructs, error_state = Topology.from_pdb_and_monomer_info(str(self.info.structure_file), self.info.monomer_file_chgd, strict=strict, verbose=verbose)
+        else:
+            assert(self.info.monomer_file.exists())
+            openff_topology, substructs, error_state = Topology.from_pdb_and_monomer_info(str(self.info.structure_file), self.info.monomer_file, strict=strict, verbose=verbose)
+
+        if topo_only:
+            return openff_topology
+        return openff_topology, substructs, error_state 
+    
+    def largest_offmol_matched(self, *args, **kwargs) -> Molecule: 
+        '''Return the largest sub-molecule in the structure file Topology. Intended to differentiate target molecules from solvent'''
+        topo = self.openff_topology_matched(*args, **kwargs)
+        if not isinstance(topo, Topology):
+            topo = topo[0] # handles the case where topo_only is False - TODO : make this less terrible
+
+        return max(topo.molecules, key=lambda mol : mol.n_atoms)
+    offmol_matched = largest_offmol_matched # alias for simplicity
+    
+    # Property wrappers for default cases - simplifies notation for common usage
+    @property
+    def off_topology(self):
+        return self.openff_topology_matched()
+    
+    @property 
+    def largest_offmol(self):
+        return self.largest_offmol_matched()
+    offmol = largest_offmol # alias for simplicity
+
+# FILE POPULATION AND MANAGEMENT
+    @update_checkpoint
+    def populate_mol_files(self, source_dir : Path) -> None:
+        '''
+        Populates a PolymerDir with the relevant structural and monomer files from a shared source ("data dump") folder
+        Assumes that all structure and monomer files will have the same name as the PolymerDir in question
+        '''
+        pdb_path = source_dir/f'{self.mol_name}.pdb'
+        new_pdb_path = self.structures/f'{self.mol_name}.pdb'
+        copyfile(pdb_path, new_pdb_path)
+        self.info.structure_file = new_pdb_path
+
+        monomer_path = source_dir/f'{self.mol_name}.json'
+        if monomer_path.exists():
+            new_monomer_path = self.monomers/monomer_path.name
+            copyfile(monomer_path, new_monomer_path)
+            self.info.monomer_file = new_monomer_path
+    
+    @update_checkpoint
+    def create_charged_monomer_file(self, residue_charges : ResidueChargeMap):
+        '''Create a new copy of the current monomer file with residue-wise mapping of substructure id to charges'''
+        assert(self.info.monomer_file is not None)
+
+        if self.info.solvent is not None and self.info.solvent.charges is not None: # ensure solvent "monomer" charge entries are also recorded
+            residue_charges = {**residue_charges, **self.info.solvent.monomer_json_data['charges']} 
+            
+        chgd_monomer_data = {**self.monomer_data} # load uncharged monomer_data and create copy
+        chgd_monomer_data['charges'] = residue_charges
+
+        chgd_mono_path = self.info.monomer_file.with_name(f'{self.mol_name}_charged.json')
+        with chgd_mono_path.open('w') as chgd_json:
+            json.dump(chgd_monomer_data, chgd_json, indent=4)
+
+        self.info.monomer_file_chgd = chgd_mono_path # record path to new json file
+
+    @update_checkpoint
+    def solvate(self, template_path : Path, solvent : Solvent, exclusion : float=None, precision : int=4) ->  'PolymerDir':
+        '''Applies packmol solvation routine to an extant PolymerDir'''
+        assert(self.has_structure_data) # TODO : clean these checks up eventually
+        assert(solvent.structure_file is not None)
+
+        if exclusion is None:
+            exclusion = self.info.exclusion # default to same exclusion as parent
+
+        solvated_name = f'{self.mol_name}_solv_{solvent.name}'
+        solvated_dir = PolymerDir(parent_dir=self.parent_dir, mol_name=solvated_name)
+
+        solvated_dir.info.exclusion = exclusion
+        box_vectors = self.mol_bbox + 2*exclusion # can't use either dirs "box_vectors" property directly, since the solvated dir has no structure file yet and the old dir may have different exclusion
+        V_box = general.product(box_vectors)
+
+        solvated_dir.info.structure_file = packmol_solvate_wrapper( # generate and point to solvated PDB structure
+            polymer_pdb = self.info.structure_file, 
+            solvent_pdb = solvent.structure_file, 
+            outdir      = solvated_dir.structures, 
+            outname     = solvated_name, 
+            template_path = template_path,
+            N           = round(V_box * solvent.number_density),
+            box_dims    = box_vectors,
+            precision   = precision
+        )
+
+        if self.has_monomer_data:
+            solvated_mono_data = {**self.monomer_data}           # note that this is explicitly UNCHARGED monomer data
+            for field, values in solvated_mono_data.items():     # this merge strategy ensures solvent data does not overwrite or append extraneous data
+                values.update(solvent.monomer_json_data[field])  # specifically, charges will not be written to an uncharged json (which would screw up graph match and load)
+
+            solva_mono_path = solvated_dir.monomers/f'{solvated_name}.json'
+            with solva_mono_path.open('w') as solv_mono_file:
+                json.dump(solvated_mono_data, solv_mono_file, indent=4)
+            solvated_dir.info.monomer_file = solva_mono_path
+
+        solvated_dir.info.solvent = solvent # set this only AFTER solvated files have been created
+        solvated_dir.to_file() # ensure checkpoint file is created for newly solvated directory
+        return solvated_dir
+    
+    @update_checkpoint
+    def create_FF_file(self, xml_src : Path) -> ForceField:
+        '''Generate an OFF force field with molecule-specific (and solvent specific, if applicable) Library Charges appended'''
+        assert(self.info.monomer_file_chgd is not None)
+
+        ff_path = self.FF/f'{self.mol_name}.offxml' # path to output library charges to
+        forcefield, lib_chgs = write_lib_chgs_from_mono_data(self.monomer_data_charged, xml_src, output_path=ff_path)
+
+        if self.info.solvent is not None:
+            forcefield = ForceField(ff_path, self.info.solvent.forcefield_file, allow_cosmetic_attributes=True) # use both the polymer-specific xml and the solvent FF xml to make hybrid forcefield
+            forcefield.to_file(ff_path)
+
+        self.info.ff_file = ff_path # ensure change is reflected in directory info
+        return forcefield
 
 # SIMULATION
     @property
@@ -185,73 +321,15 @@ class PolymerDir:
         filetree.clear_dir(self.MD)
         filetree.clear_dir(self.logs)
 
-# FILE POPULATION AND MANAGEMENT
-    @update_checkpoint
-    def populate_mol_files(self, source_dir : Path) -> None:
-        '''
-        Populates a PolymerDir with the relevant structural and monomer files from a shared source ("data dump") folder
-        Assumes that all structure and monomer files will have the same name as the PolymerDir in question
-        '''
-        pdb_path = source_dir/f'{self.mol_name}.pdb'
-        new_pdb_path = self.structures/f'{self.mol_name}.pdb'
-        copyfile(pdb_path, new_pdb_path)
-        self.info.structure_file = new_pdb_path
 
-        monomer_path = source_dir/f'{self.mol_name}.json'
-        if monomer_path.exists():
-            new_monomer_path = self.monomers/monomer_path.name
-            copyfile(monomer_path, new_monomer_path)
-            self.info.monomer_file = new_monomer_path
-    
-    @update_checkpoint
-    def solvate(self, template_path : Path, solvent : Solvent, exclusion : float=None, precision : int=4) ->  'PolymerDir':
-        '''Applies packmol solvation routine to an extant PolymerDir'''
-        assert(self.has_structure_data) # TODO : clean these checks up eventually
-        assert(solvent.structure_file is not None)
-
-        if exclusion is None:
-            exclusion = self.info.exclusion # default to same exclusion as parent
-
-        outname = f'{self.mol_name}_solv_{solvent.name}'
-        solvated_dir = PolymerDir(parent_dir=self.parent_dir, mol_name=outname)
-
-        solvated_dir.info.exclusion = exclusion
-        box_vectors = self.mol_bbox + 2*exclusion # can't use either dirs "box_vectors" property directly, since the solvated dir has no structure file yet and the old dir may have different exclusion
-        V_box = general.product(box_vectors)
-
-        solvated_dir.info.structure_file = packmol_solvate_wrapper( # generate and point to solvated PDB structure
-            polymer_pdb=self.info.structure_file, 
-            solvent_pdb=solvent.structure_file, 
-            outdir=solvated_dir.structures, 
-            outname=outname, 
-            template_path=template_path,
-            N=round(V_box * solvent.number_density),
-            box_dims=box_vectors,
-            precision=precision
-        )
-
-        if self.has_monomer_data:
-            mono_file = self.monomer_file_ranked
-            with mono_file.open('r') as mono_src:
-                mono_data = json.load(mono_src)
-            
-            for field, values in mono_data.items(): # this merge strategy ensures solvent data does not overwrite or append extraneous data
-                values.update(solvent.monomer_json_data[field])  # specifically, charges will not be written to an uncharged json (which would screw up graph match and load)
-
-            new_mono_path = solvated_dir.monomers/f'{outname}.json'
-            with new_mono_path.open('w') as mono_out:
-                json.dump(mono_data, mono_out, indent=4)
-            solvated_dir.info.monomer_file = new_mono_path
-
-        solvated_dir.info.solvent = solvent # set this only AFTER solvated files have been created
-        return solvated_dir
-    
 class PolymerDirManager:
     '''Class for organizing, loading, and manipulating collections of PolymerDir objects'''
     def __init__(self, collection_dir : Path):
         self.collection_dir : Path = collection_dir
+        self.log_dir : Path = self.collection_dir/'Logs'
         self.mol_dirs_list : list[PolymerDir] = []
-        self.log_dir = self.collection_dir/'Logs'
+
+        self.collection_dir.mkdir(exist_ok=True)
         self.log_dir.mkdir(exist_ok=True)
         
         self.update_mol_dirs() # populate currently extant dirs
