@@ -3,11 +3,13 @@ from collections import defaultdict
 from pathlib import Path
 from copy import copy
 import numpy as np
+from ast import literal_eval
 
 # Typing and class templates
 from dataclasses import dataclass, field
-from abc import ABC, abstractmethod
-from .extratypes import AtomIDMap, ChargeMap
+from abc import ABC, abstractmethod, abstractproperty
+from .extratypes import AtomIDMap, ChargeMap, ResidueChargeMap
+from .representation import PolymerDir
 from typing import Optional
 
 # Cheminformatics
@@ -32,7 +34,8 @@ TOOLKITS = {
 }
 
 
-# Useful storage and representation classes
+## CLASSES
+# Interface for distributing non-integral monomer charges
 class ChargeDistributionStrategy(ABC):
     '''Interface for defining how excess charge should be distributed within averaged residues
     to ensure an overall net 0 charge for each monomer fragment'''
@@ -47,6 +50,7 @@ class UniformDistributionStrategy(ChargeDistributionStrategy):
         charge_offset = net_charge / len(base_charges) # net charge divided evenly amongst atoms (average of averages, effectively)
         return {sub_id : charge_offset for sub_id in base_charges}
 
+# Encapsulation for averaging functions
 @dataclass
 class Accumulator:
     '''Compact container for accumulating averages'''
@@ -74,22 +78,71 @@ class ChargedResidue:
         for sub_id, charge in self.charges.items():
             self.charges[sub_id] = charge - distrib[sub_id] # subtract respective charge offsets from each atom's partial charge
 
+# Molecule-charging-to-SDF interface
+class SDFChargerBase(ABC):
+    '''Interface for defining various methods of generating and storing atomic partial charges'''
+    @classmethod
+    @abstractproperty
+    def TAG(self):
+        '''For setting the name of the method as a class attribute in child classes'''
+        pass
 
-# Charge Averaging functions
+    @abstractmethod
+    def charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
+        '''Concrete implementation for producing molecule partial charges'''
+        pass
+
+    def generate_sdf(self, mol_dir : PolymerDir, *args, **kwargs) -> tuple[Path, Molecule]:
+        '''Accepts a PolymerDir, generates an SDF file of the corresponding charged molecule, returns the Path to the SDF '''
+        uncharged_mol = mol_dir.offmol_matched(strict=True, verbose=False, chgd_monomers=False, topo_only=True)
+        cmol = self.charge_molecule(uncharged_mol, *args, **kwargs)
+        cmol.properties['metadata'] = [atom.metadata for atom in cmol.atoms] # need to store metadata as separate property, since SDF does not preserved metadata atomwise
+
+        sdf_path = mol_dir.SDF/f'{mol_dir.mol_name}_charged_{self.TAG}.sdf'
+        cmol.to_file(str(sdf_path), file_format='SDF')
+
+        return sdf_path, cmol
+
+class ABE10Charger(SDFChargerBase):
+    '''Charger class for AM1-BCC-ELF10 exact charging'''
+    TAG = 'ABE10_exact'
+
+    def charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
+        '''Concrete implementation for AM1-BCC-ELF10'''
+        return generate_molecule_charges(uncharged_mol, toolkit='OpenEye Toolkit', partial_charge_method='am1bccelf10', force_match=True)
+
+class EspalomaCharger(SDFChargerBase):
+    '''Charger class for AM1-BCC-ELF10 exact charging'''
+    TAG = 'Espaloma_AM1BCC'
+
+    def charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
+        return generate_molecule_charges(uncharged_mol, toolkit='Espaloma Charge Toolkit', partial_charge_method='espaloma-am1bcc', force_match=True)
+    
+class ABE10AverageCharger(SDFChargerBase):
+    '''Charger class for AM1-BCC-ELF10 exact charging'''
+    TAG = 'ABE10_averaged'
+
+    def set_residue_charges(self, residue_charges : ResidueChargeMap):
+        '''Slightly janky workaround to get initialization and the charge_molecule interface to have the right number of args'''
+        self.residue_charges = residue_charges
+
+    def charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
+        return apply_averaged_res_chgs(uncharged_mol, self.residue_charges, inplace=False)
+    
+## FUNCTIONS
+# Charge application / loading functions
 def generate_molecule_charges(mol : Molecule, toolkit : str='OpenEye Toolkit', partial_charge_method : str='am1bccelf10', force_match : bool=True) -> Molecule:
     '''Takes a Molecule object and computes partial charges with AM1BCC using toolkit method of choice. Returns charged molecule'''
-    mol.assign_partial_charges( 
-        partial_charge_method=partial_charge_method, 
-        toolkit_registry=TOOLKITS.get(toolkit)
-    )
+    tk_reg = TOOLKITS.get(toolkit)
+    mol.assign_partial_charges(partial_charge_method=partial_charge_method, toolkit_registry=tk_reg)
     charged_mol = mol # rename for clarity
+
     # charged_mol.generate_conformers( # get some conformers to run elf10 charge method. By default, `mol.assign_partial_charges`...
     #     n_conformers=10,             # ...uses 500 conformers, but we can generate and use 10 here for demonstration
     #     rms_cutoff=0.25 * unit.angstrom,
     #     make_carboxylic_acids_cis=True,
     #     toolkit_registry=tk_reg
     # ) # very slow for large polymers! 
-    # print(f'final molecular charges: {charged_mol.partial_charges}')     # note: the charged_mol has metadata about which monomers were assigned where as a result of the chemicaly info assignment.
 
     if force_match:
         for atom in charged_mol.atoms:
@@ -97,6 +150,49 @@ def generate_molecule_charges(mol : Molecule, toolkit : str='OpenEye Toolkit', p
         
     return charged_mol 
 
+def _apply_averaged_res_chgs(mol : Molecule, residue_charges : ResidueChargeMap) -> None:
+    '''Takes an OpenFF Molecule and a residue-wise map of averaged partial charges and applies the mapped charges to the Molecule'''
+    new_charges = [
+        residue_charges[atom.metadata['residue_name']][atom.metadata['substructure_id']]
+            for atom in mol.atoms
+    ]
+    new_charges = np.array(new_charges) * elementary_charge # convert to unit-ful array (otherwise assignment won't work)
+    mol.partial_charges = new_charges
+
+def apply_averaged_res_chgs(mol : Molecule, residue_charges : ResidueChargeMap, inplace : bool=False) -> Optional[Molecule]:
+    '''
+    Takes an OpenFF Molecule and a residue-wise map of averaged partial charges and applies the mapped charges to the Molecule
+
+    Can optionally specify whether to do charge assignment in-place (with "inplace" flag)
+    -- If inplace, will apply to the Molecule passed and return None
+    -- If not inplace, will create a copy, charge that, and return the resulting Molecule
+    '''
+    if inplace:
+        _apply_averaged_res_chgs(mol, residue_charges)
+    else:
+        new_mol = copy(mol) # create replica of Molecule to leave charges undisturbed
+        _apply_averaged_res_chgs(new_mol, residue_charges)
+        return new_mol
+
+def load_matched_charged_molecule(sdf_path : Path, assume_ordered : bool=True) -> Molecule:
+    '''Special load instruction for charged SDF files - necessary to smoothly remap atom metadata from properties'''
+    cmol_matched = Molecule.from_file(sdf_path)
+    metadata = literal_eval(cmol_matched.properties['metadata']) # needed to de-stringify list
+
+    if assume_ordered:  # assumes metadata list is in order by atom ID
+        for (atom, mdat) in zip(cmol_matched.atoms, metadata):
+            for (key, value) in mdat.items():
+                atom.metadata[key] = value 
+    else: # slightly clunkier but doesn't assume anything about ordering (more robust)
+        metadata_map = {mdat['pdb_atom_id'] : mdat for mdat in metadata} 
+        for atom in cmol_matched.atoms:
+            mdat = metadata_map[atom.molecule_atom_index]
+            for (key, value) in mdat.items():
+                atom.metadata[key] = value 
+
+    return cmol_matched
+
+# Charge Averaging functions
 def find_repr_residues(mol : Molecule) -> dict[str, int]:
     '''Determine names and smallest residue numbers of all unique residues in charged molecule
     Used as representatives for generating labelled SMARTS strings '''
@@ -109,7 +205,6 @@ def find_repr_residues(mol : Molecule) -> dict[str, int]:
 
     return rep_res_nums
 
-# -- Current versions of averaging functions
 def get_averaged_charges(cmol : Molecule, monomer_data : dict[str, dict], distrib_mono_charges : bool=True) -> tuple[list[ChargedResidue], AtomIDMap]:
     '''Takes a charged molecule and a dict of monomer SMIRKS strings and averages charges for each repeating residue. 
     Returns a list of ChargedResidue objects, each of which holds:
@@ -160,30 +255,6 @@ def get_averaged_charges(cmol : Molecule, monomer_data : dict[str, dict], distri
         avg_charges_by_residue.append(chgd_res)
 
     return avg_charges_by_residue, atom_id_mapping
-
-def _apply_averaged_res_chgs(mol : Molecule, residue_charges : dict[str, ChargeMap]) -> None:
-    '''Takes an OpenFF Molecule and a residue-wise map of averaged partial charges and applies the mapped charges to the Molecule'''
-    new_charges = [
-        residue_charges[atom.metadata['residue_name']][atom.metadata['substructure_id']]
-            for atom in mol.atoms
-    ]
-    new_charges = np.array(new_charges) * elementary_charge # convert to unit-ful array (otherwise assignment won't work)
-    mol.partial_charges = new_charges
-
-def apply_averaged_res_chgs(mol : Molecule, residue_charges : dict[str, ChargeMap], inplace : bool=False) -> Optional[Molecule]:
-    '''
-    Takes an OpenFF Molecule and a residue-wise map of averaged partial charges and applies the mapped charges to the Molecule
-
-    Can optionally specify whether to do charge assignment in-place (with "inplace" flag)
-    -- If inplace, will apply to the Molecule passed and return None
-    -- If not inplace, will create a copy, charge that, and return the resulting Molecule
-    '''
-    if inplace:
-        _apply_averaged_res_chgs(mol, residue_charges)
-    else:
-        new_mol = copy(mol) # create replica of Molecule to leave charges undisturbed
-        _apply_averaged_res_chgs(new_mol, residue_charges)
-        return new_mol
     
 def write_new_lib_chgs_from_json(monomer_data : dict[str, dict], offxml_src : Path, output_path : Path) -> tuple[ForceField, list[LibraryChargeHandler]]:
     '''Takes a monomer JSON file (must contain charges!) and a force field XML file and appends Library Charges based on the specified monomers. Outputs to specified output_path'''
@@ -209,7 +280,8 @@ def write_new_lib_chgs_from_json(monomer_data : dict[str, dict], offxml_src : Pa
     
     return forcefield, lib_chgs
 
-# -- Historic versions of averaging functions
+
+# Historical versions of functions for backwards-compatibility reasons
 def get_averaged_charges_orig(cmol : Molecule, monomer_data : dict[str, dict], distrib_mono_charges : bool=False) -> list[ChargedResidue]:
     '''Takes a charged molecule and a dict of monomer structure data and averages charges for each repeating residue. 
     Returns a list of ChargedResidue objects each of which holds:
