@@ -11,10 +11,10 @@ JSONSerializable = Union[str, bool, int, float, tuple, list, dict]
 # -- OpenFF / graph match
 SubstructSummary = tuple[str, list[int], bool]  # RDKit graph-match-specific type alias
 
-# -- Charge mapping and averaging
-ChargeMap = dict[int, float] 
+# -- Charge mapping and averaging - TODO : remove these, as they have been migrated over to .charging
 AtomIDMap = dict[str, dict[int, tuple[int, str]]]
-
+ChargeMap = dict[int, float] 
+ResidueChargeMap = dict[str, ChargeMap]
 
 # Typechecking functions
 def isnumeric(var: Any) -> bool:
