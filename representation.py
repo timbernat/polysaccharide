@@ -2,7 +2,8 @@
 from . import general, filetree
 from .solvation import packmol_solvate_wrapper
 from .solvents import Solvent
-from .charging.types import SubstructSummary, ResidueChargeMap
+from .extratypes import SubstructSummary
+from .charging.types import ResidueChargeMap
 from .charging.averaging import write_lib_chgs_from_mono_data
 
 # Typing and Subclassing
@@ -397,6 +398,7 @@ class PolymerDirManager:
         if not really:
             raise PermissionError('Please confirm that you really want to clear all directories (this can\'t be undone!)')
         filetree.clear_dir(self.collection_dir)
+        self.log_dir.mkdir(exist_ok=True) # remake Log directory
     
     @auto_update
     def purge_sims(self, really : bool=False) -> None:
