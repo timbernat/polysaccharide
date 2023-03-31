@@ -5,8 +5,10 @@ from .solvents import Solvent
 from .extratypes import SubstructSummary
 from .charging.types import ResidueChargeMap
 from .charging.averaging import write_lib_chgs_from_mono_data
+from .charging.application import MolCharger
 
 # Typing and Subclassing
+from numpy import number, ndarray
 from typing import Any, Callable, ClassVar, Optional
 from dataclasses import dataclass, field
 
@@ -31,14 +33,14 @@ class PolymerInfo:
     '''For storing useful info about a Polymer Directory'''
     mol_name  : str = field(default=None)
     exclusion : float = field(default=1*nanometer) # distance between molecule bounding box and simulation box size
-    solvent   : Solvent = field(default=None) # kept default as NoneType rather than '' for more intuitive solvent search with unsolvated molecules
+    solvent   : Solvent = field(default=None) # kept default as NoneType rather than empty string for more intuitive solvent search with unsolvated molecules
+    charges   : dict[str, ndarray[float]] = field(default_factory=dict, repr=False)
 
-    structure_file      : Optional[Path] = field(default=None) # .PDB
-    structure_file_chgd : Optional[Path] = field(default=None) # .SDF
-    monomer_file        : Optional[Path] = field(default=None) # .JSON
-    monomer_file_chgd   : Optional[Path] = field(default=None) # .JSON
-    pickle_file         : Optional[Path] = field(default=None) # .PKL - TOSELF : this stores pickled Molecule() objects, NOT pickled PolymerDir() checkpoints
-    ff_file             : Optional[Path] = field(default=None) # .OFFXML
+    ff_file              : Optional[Path] = field(default=None) # .OFFXML
+    monomer_file         : Optional[Path] = field(default=None) # .JSON
+    monomer_file_chgd    : Optional[Path] = field(default=None) # .JSON
+    structure_file       : Optional[Path] = field(default=None) # .PDB
+    structure_files_chgd : Optional[dict[str, Path]] = field(default_factory=dict) # dict of .SDF
 
 @dataclass
 class PolymerDir:
@@ -48,13 +50,13 @@ class PolymerDir:
 
     path            : Path = field(init=False, repr=False)
     checkpoint_path : Path = field(init=False, repr=False)
-    info     : PolymerInfo = field(init=False)
+    info     : PolymerInfo = field(init=False, default_factory=PolymerInfo)
+    charge_method    : str = field(init=False, default=None)
 
     subdirs : list[Path] = field(default_factory=list, repr=False)
     _SUBDIRS : ClassVar[tuple[str, ...]] = ( # directories with these names will be present in all polymer directories by standard
         'structures',
         'monomers',
-        'pkl',
         'SDF',
         'FF',
         'MD',
@@ -62,11 +64,13 @@ class PolymerDir:
         'logs'
     )
 
+    _off_topology : Topology = field(default=None, init=False) # for caching purposes
+    _offmol       : Molecule = field(default=None, init=False)
+
 # CONSTRUCTION 
     def __post_init__(self):
         '''Initialize core directory and file paths'''
         self.path = self.parent_dir/self.mol_name
-        self.info = PolymerInfo() # will keep file updated as object is updated
         self.info.mol_name = self.mol_name # slightly redundant but more modular
 
         for dir_name in PolymerDir._SUBDIRS:
@@ -105,7 +109,7 @@ class PolymerDir:
         with checkpoint_path.open('rb') as checkpoint_file:
             return pickle.load(checkpoint_file)
         
-    def update_checkpoint(funct) -> Callable[[Any], Optional[Any]]: # NOTE : this deliberately doesn't have a "self" arg!
+    def update_checkpoint(funct : Callable) -> Callable[[Any], Optional[Any]]: # NOTE : this deliberately doesn't have a "self" arg!
         '''Decorator for updating the on-disc checkpoint file after a function updates a PolymerDir attribute'''
         def update_fn(self, *args, **kwargs) -> Optional[Any]:
             ret_val = funct(self, *args, **kwargs) # need temporary value so update call can be made before returning
@@ -178,38 +182,82 @@ class PolymerDir:
         '''Dimensions fo the periodic simulation box'''
         return self.mol_bbox + 2*self.info.exclusion # 2x accounts for the fact that exclusion must occur on either side of the tight bounding box
     
-# OpenFF / OpenMM Attributes
-    def openff_topology_matched(self, strict : bool=True, verbose : bool=False, chgd_monomers : bool=False, topo_only : bool=True) -> tuple[Topology, Optional[list[SubstructSummary]], Optional[bool]]:
+# OpenFF / OpenMM PROPERTIES
+    def off_topology_matched(self, strict : bool=True, verbose : bool=False, chgd_monomers : bool=False, topo_only : bool=True) -> tuple[Topology, Optional[list[SubstructSummary]], Optional[bool]]:
         '''Performs a monomer substructure match and returns the resulting OpenFF Topology'''
         if chgd_monomers:
             assert(self.info.monomer_file_chgd.exists())
-            openff_topology, substructs, error_state = Topology.from_pdb_and_monomer_info(str(self.info.structure_file), self.info.monomer_file_chgd, strict=strict, verbose=verbose)
+            off_topology, substructs, error_state = Topology.from_pdb_and_monomer_info(str(self.info.structure_file), self.info.monomer_file_chgd, strict=strict, verbose=verbose)
         else:
             assert(self.info.monomer_file.exists())
-            openff_topology, substructs, error_state = Topology.from_pdb_and_monomer_info(str(self.info.structure_file), self.info.monomer_file, strict=strict, verbose=verbose)
+            off_topology, substructs, error_state = Topology.from_pdb_and_monomer_info(str(self.info.structure_file), self.info.monomer_file, strict=strict, verbose=verbose)
 
         if topo_only:
-            return openff_topology
-        return openff_topology, substructs, error_state 
+            return off_topology
+        return off_topology, substructs, error_state 
     
-    def largest_offmol_matched(self, *args, **kwargs) -> Molecule: 
+    def largest_offmol_matched(self, *topo_args, **topo_kwargs) -> Molecule: 
         '''Return the largest sub-molecule in the structure file Topology. Intended to differentiate target molecules from solvent'''
-        topo = self.openff_topology_matched(*args, **kwargs)
+        topo = self.off_topology_matched(*topo_args, **topo_kwargs)
         if not isinstance(topo, Topology):
             topo = topo[0] # handles the case where topo_only is False - TODO : make this less terrible
 
         return max(topo.molecules, key=lambda mol : mol.n_atoms)
     offmol_matched = largest_offmol_matched # alias for simplicity
     
-    # Property wrappers for default cases - simplifies notation for common usage
+    # Property wrappers for default cases - simplifies notation for common usage. Rematched versions are still exposed thru *_matched OFF methods
     @property
     def off_topology(self):
-        return self.openff_topology_matched()
+        if self._off_topology is None:
+            self._off_topology = self.off_topology_matched() # cache topology match
+            self.to_file() # not using "update_checkpoint" decorator here since attr write happens only once, and to avoid interaction with "property" 
+        return self._off_topology
     
     @property 
     def largest_offmol(self):
-        return self.largest_offmol_matched()
+        if self._offmol is None:
+            self._offmol = self.largest_offmol_matched()
+            self.to_file() # not using "update_checkpoint" decorator here since attr write happens only once, and to avoid interaction with "property" 
+        return self._offmol
     offmol = largest_offmol # alias for simplicity
+
+# CHARGING
+    @update_checkpoint
+    def register_charges(self, charge_method : str, charges : ndarray[float]) -> None:
+        '''For inserting/overwriting available charge sets in local session and on file'''
+        assert(general.hasunits(charges)) # ensure charges have units (can't assign to Molecules if not)
+        self.info.charges[charge_method] = charges
+
+    @update_checkpoint
+    def unregister_charges(self, charge_method) -> None:
+        '''For removing available charge sets in local session and on file'''
+        self.info.charges.pop(charge_method, None) # TOSELF : can get rid of None default arg if KeyError is istaed desired
+
+    @update_checkpoint
+    def assign_charges_by_lookup(self, charge_method : str) -> None:
+        '''Choose which registered charges should be applied to the cached Molecule by key lookup'''
+        self.offmol.partial_charges = self.info.charges[charge_method] # NOTE : explicitly using property version of offmol (i.e. not _offmol) in case Molecule isn't yet instantiated
+        self.charge_method = charge_method 
+    
+    def assign_charges(self, charge_method : str, charges : ndarray[float]) -> None:
+        '''Wrap registration and assignment for convenience'''
+        self.register_charges(charge_method, charges) # doesn't need "update_checkpoint" flag, as all internal methods already do so
+        self.assign_charges_by_lookup(charge_method)
+
+    @update_checkpoint
+    def charge_and_save_molecule(self, charger : MolCharger, *topo_args, **topo_kwargs) -> tuple[Molecule, Path]:
+        '''Generates and registers 1) an .SDF file for the charged molecule and 2) an charge entry for just the Molecule's charges'''
+        charge_method = charger.TAG
+        unchgd_mol = self.offmol_matched(*topo_args, **topo_kwargs) # load a fresh, uncharged molecule from graph match (important to avoid charge contamination)
+        chgd_mol = charger.charge_molecule(unchgd_mol)
+        self.register_charges(charge_method, chgd_mol.partial_charges)
+
+        sdf_path = self.SDF/f'{self.mol_name}_charged_{charge_method}.sdf'
+        chgd_mol.properties['metadata'] = [atom.metadata for atom in chgd_mol.atoms] # need to store metadata as separate property, since SDF does not preserved metadata atomwise
+        chgd_mol.to_file(str(sdf_path), file_format='SDF')
+        self.info.structure_files_chgd[charge_method] = sdf_path
+
+        return chgd_mol, sdf_path
 
 # FILE POPULATION AND MANAGEMENT
     @update_checkpoint
@@ -335,14 +383,6 @@ class PolymerDirManager:
         
         self.update_mol_dirs() # populate currently extant dirs
 
-    def auto_update(funct) -> Callable[[Any], Optional[Any]]: # NOTE : this deliberately doesn't have a "self" arg!
-        '''Decorator for updating the internal list of PolymerDirs after a function'''
-        def update_fn(self, *args, **kwargs) -> Optional[Any]:
-            ret_val = funct(self, *args, **kwargs) # need temporary value so update call can be made before returning
-            self.update_mol_dirs(return_missing=False)
-            return ret_val
-        return update_fn
-
     def update_mol_dirs(self, return_missing : bool=False) -> Optional[list[Path]]:
         '''
         Load existing polymer directories from target directory into memory
@@ -360,6 +400,14 @@ class PolymerDirManager:
         if return_missing:
             return missing_chk_data
         
+    def auto_update(funct : Callable) -> Callable[[Any], Optional[Any]]: # NOTE : this deliberately doesn't have a "self" arg!
+        '''Decorator for updating the internal list of PolymerDirs after a function'''
+        def update_fn(self, *args, **kwargs) -> Optional[Any]:
+            ret_val = funct(self, *args, **kwargs) # need temporary value so update call can be made before returning
+            self.update_mol_dirs(return_missing=False)
+            return ret_val
+        return update_fn
+    
     @property
     def mol_dirs(self) -> dict[str, PolymerDir]:
         '''
@@ -388,7 +436,7 @@ class PolymerDirManager:
             mol_dir = PolymerDir(parent_dir, mol_name)
             mol_dir.populate_mol_files(source_dir=source_dir)
 
-    def purge_logs(self, really : bool=False) -> None:
+    def purge_logs(self, really : bool=False) -> None: # NOTE : deliberately undecorated, as no PolymerDir reload is required
         if not really:
             raise PermissionError('Please confirm that you really want to clear all directories (this can\'t be undone!)')
         filetree.clear_dir(self.log_dir)
