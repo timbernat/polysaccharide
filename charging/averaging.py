@@ -22,7 +22,7 @@ def find_repr_residues(mol : Molecule) -> dict[str, int]:
 
     return rep_res_nums
 
-def get_averaged_charges(cmol : Molecule, monomer_data : dict[str, dict], distrib_mono_charges : bool=True) -> tuple[list[ChargedResidue], AtomIDMap]:
+def get_averaged_charges(cmol : Molecule, monomer_data : dict[str, dict], distrib_mono_charges : bool=True, net_mono_charge : float=0.0) -> tuple[list[ChargedResidue], AtomIDMap]:
     '''Takes a charged molecule and a dict of monomer SMIRKS strings and averages charges for each repeating residue. 
     Returns a list of ChargedResidue objects, each of which holds:
         - A dict of the averaged charges by atom 
@@ -68,7 +68,7 @@ def get_averaged_charges(cmol : Molecule, monomer_data : dict[str, dict], distri
             mol_fragment=mol_frag
         )
         if distrib_mono_charges: # only distribute charges if explicitly called for (enabled by default)
-            chgd_res.distrib_mono_charges()
+            chgd_res.distrib_mono_charges(desired_net_charge=net_mono_charge)
         avg_charges_by_residue.append(chgd_res)
 
     return avg_charges_by_residue, atom_id_mapping
