@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 WATER_TIP3P = Solvent(
-    name = 'water2',
+    name = 'water',
     formula = 'H2O',
     smarts  = '[#1:1]-[#8:3]-[#1:2]',
 
@@ -16,7 +16,7 @@ WATER_TIP3P = Solvent(
         "2" : 0.417,
         "3" : -0.834 
     },
-    structure_file  = Path(__file__).parent/'water.json',
+    structure_file  = Path(__file__).parent/'water.pdb',
     forcefield_file = Path(__file__).parent/'tip3p.offxml'
 )
 
