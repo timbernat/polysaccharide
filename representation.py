@@ -248,7 +248,7 @@ class PolymerDir:
         '''Generates and registers 1) an .SDF file for the charged molecule and 2) an charge entry for just the Molecule's charges'''
         charge_method = charger.TAG
         unchgd_mol = self.offmol_matched(*topo_args, **topo_kwargs) # load a fresh, uncharged molecule from graph match (important to avoid charge contamination)
-        LOGGER.info(f'Generating pure charges for {self.mol_name} via the "{charge_method}" method')
+        LOGGER.info(f'Generating pure charges for {self.mol_name} via the {charge_method} method')
         chgd_mol = charger.charge_molecule(unchgd_mol)
         self.register_charges(charge_method, chgd_mol.partial_charges)
         LOGGER.info(f'Successfully assigned charges via {charge_method}')
@@ -352,7 +352,7 @@ class PolymerDir:
         if self.solvent is not None:
             forcefield = ForceField(ff_path, self.solvent.forcefield_file, allow_cosmetic_attributes=True) # use both the polymer-specific xml and the solvent FF xml to make hybrid forcefield
             forcefield.to_file(ff_path)
-            LOGGER.info(f'Detected solvent "{self.solvent.name}", merged force field')
+            LOGGER.info(f'Detected solvent "{self.solvent.name}", merged solvent and molecule force field')
 
         self.ff_file = ff_path # ensure change is reflected in directory info
         LOGGER.info('Generated new Force Field XML with Library Charges')
