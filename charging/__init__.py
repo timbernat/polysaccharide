@@ -9,4 +9,4 @@ TOOLKITS = {
 }
 
 # import submodules
-from . import averaging, charging, residues, sdf, types # must come last due to variables defined above
+from . import application, averaging, residues, types # must come last due to variables defined above
