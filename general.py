@@ -13,10 +13,12 @@ from pint import Quantity as PintQuantity
 from openmm.unit.quantity import Quantity as OMMQuantity
 
 
+# Mathematical functions
 def product(container : Iterable):
     '''Analogous to builtin sum()'''
     return reduce(mul, container)
 
+# Helper methods for builtin data structures
 def iter_len(itera : Iterable):
     '''
     Get size of an iterable object where ordinary len() call is invalid (namely a generator)
@@ -31,12 +33,18 @@ def sort_dict_by_values(targ_dict : dict, reverse : bool=False) -> dict[Any, Any
             for key in sorted(targ_dict, key=lambda k : targ_dict[k], reverse=reverse)
     }
 
+# Date and time formatting
 def timestamp_now(fmt_str : str=DATETIME_FMT) -> str:
     '''
     Return a string timestamped with the current date and time (at the time of calling)
     Is formatted such that the resulting string can be safely used in a filename
     '''
     return datetime.now().strftime(fmt_str)
+
+# Functions for dealing with units
+def hasunits(obj : Any) -> bool:
+    '''Naive but effective way of checking for pint and openmm units'''
+    return any(hasattr(obj, attr) for attr in ('unit', 'units')) 
 
 def strip_units(coords : Union[tuple, PintQuantity, OMMQuantity]) -> tuple[float]:
     '''
