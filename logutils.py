@@ -5,7 +5,6 @@ from typing import Iterable
 # Logging config
 LOG_FORMATTER = logging.Formatter('%(asctime)s.%(msecs)03d [%(levelname)-7s:%(module)16s:line %(lineno)-3d] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
-
 class MultiLogFileHandler(logging.FileHandler):
     '''Subclass to cut down boilerplate of logfile I/O for loggers with multiple origins'''
     def add_to_loggers(self, *loggers : list[logging.Logger]) -> None:
