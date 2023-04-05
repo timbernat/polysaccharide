@@ -13,6 +13,24 @@ from pint import Quantity as PintQuantity
 from openmm.unit.quantity import Quantity as OMMQuantity
 
 
+# Greek Characters
+greek_letter_names = [ # names for greek character literals
+    'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta',
+    'iota', 'kappa', 'lambda', 'mu', 'nu', 'xi', 'omicron', 'pi',
+    'rho', 'sigma_end', 'sigma', 'tau', 'upsilon', 'phi', 'chi', 'psi', 'omega'
+]
+
+greek_start_idxs = { # indices where each case of the Greek alphabet starts in Unicode
+    'LOWER' : 945,
+    'UPPER' : 913
+}
+
+for case, idx in greek_start_idxs.items():
+    globals()[f'GREEK_{case}'] = { # add dicts to global namespace
+        letter_name : chr(idx + i)
+            for i, letter_name in enumerate(greek_letter_names)
+    }
+
 # Mathematical functions
 def product(container : Iterable):
     '''Analogous to builtin sum()'''
