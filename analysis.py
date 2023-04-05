@@ -1,5 +1,5 @@
 # Cusotm imports
-from polymer_utils.plotutils import presize_subplots
+from polymer_utils.graphics.plotutils import presize_subplots
 
 # General imports
 from pathlib import Path
@@ -32,15 +32,17 @@ class PolyProp:
         '''Apply method to a trajectory'''
         return self.calc(traj, **self.kwargs)
 
-def plot_rdfs(traj : mdt.Trajectory, rad_unit : Unit=nanometer, header : str='', save_path : Path=None) -> None:
+def plot_rdfs(traj : mdt.Trajectory, rad_unit : Unit=nanometer, header : str='', save_path : Path=None) -> dict[str, np.array]:
     '''Plot pairwise radial distributions functions for all possible pairs of elements in a simulation trajectory'''
     elem_types = set(atom.element.symbol for atom in traj.topology.atoms)
     fig, ax = presize_subplots(nrows=1, ncols=len(elem_types), scale=15.0)
     fig.suptitle(header, fontsize=20)
 
+    rdfs = {}
     for curr_ax, (elem1, elem2) in zip(ax.flatten(), combinations(elem_types, 2)):
         atom_id_pairs = traj.topology.select_pairs(f'element {elem1}', f'element {elem2}')
         rdf = mdt.compute_rdf(traj, pairs=atom_id_pairs, r_range=(0.0, 1.0))
+        rdfs[f'{elem1}{elem2}'] = rdf # save result for output
 
         curr_ax.plot(*rdf)
         curr_ax.set_xlabel(f'Radial distance ({rad_unit.get_symbol()})')
@@ -52,14 +54,20 @@ def plot_rdfs(traj : mdt.Trajectory, rad_unit : Unit=nanometer, header : str='',
     else:
         plt.show()
 
-def plot_poly_props(traj : mdt.Trajectory, properties : list[PolyProp], sample_interval : int, header : str='', save_path : Path=None) -> None:
+    return rdfs
+
+def plot_poly_props(traj : mdt.Trajectory, properties : list[PolyProp], sample_interval : int, header : str='', save_path : Path=None) -> dict[str, np.array]:
     '''Compute and plot a battery of labelled and unit-ed properties over a given trajectory'''
     frame_nums = np.arange(0, traj.n_frames * sample_interval, step=sample_interval)
     fig, ax = presize_subplots(nrows=1, ncols=len(properties))
     fig.suptitle(header, fontsize=20)
 
+    prop_data = {}
     for curr_ax, prop in zip(ax.flatten(), properties):
-        curr_ax.plot(frame_nums, prop.compute(traj))
+        time_series = prop.compute(traj) 
+        prop_data[prop.abbr] = time_series * prop.unit
+
+        curr_ax.plot(frame_nums, time_series)
         curr_ax.set_xlabel('Trajectory frame')
         curr_ax.set_ylabel(f'{prop.name} ({prop.unit.get_symbol()})')
 
@@ -68,6 +76,8 @@ def plot_poly_props(traj : mdt.Trajectory, properties : list[PolyProp], sample_i
         plt.close()
     else:
         plt.show()
+
+    return prop_data
 
 # Custom implementations of polymer property calculations - recommend using MDTraj or similar implementations first
 def compute_gyration_tensor(coords : np.ndarray, use_eins=True) -> np.ndarray:
