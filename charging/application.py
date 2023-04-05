@@ -72,7 +72,8 @@ def load_matched_charged_molecule(sdf_path : Path, assume_ordered : bool=True) -
             mdat = metadata_map[atom.molecule_atom_index]
             for (key, value) in mdat.items():
                 atom.metadata[key] = value 
-
+    
+    cmol_matched.properties.pop('metadata') # remove metadata packed for notational cleanliness
     return cmol_matched
 
 # Molecule charging interface

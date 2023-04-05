@@ -2,7 +2,7 @@
 from . import general, filetree
 from .solvation.packmol import packmol_solvate_wrapper
 from .charging.averaging import write_lib_chgs_from_mono_data
-from .charging.application import MolCharger
+from .charging.application import MolCharger, load_matched_charged_molecule
 
 # Typing and Subclassing
 from numpy import number, ndarray
@@ -260,6 +260,11 @@ class PolymerDir:
         self.structure_files_chgd[charge_method] = sdf_path
 
         return chgd_mol, sdf_path
+    
+    def charged_offmol_from_sdf(self, charge_method : str) -> Molecule:
+        '''Loads a charged Molecule from a registered charge method by key lookup
+        Raises KeyError if the method requested is not registered'''
+        return load_matched_charged_molecule(self.structure_files_chgd[charge_method], assume_ordered=True)
 
 # FILE POPULATION AND MANAGEMENT
     @update_checkpoint
