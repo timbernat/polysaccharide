@@ -3,15 +3,15 @@ from . import general, filetree
 from .solvation.packmol import packmol_solvate_wrapper
 from .charging.averaging import write_lib_chgs_from_mono_data
 from .charging.application import MolCharger, load_matched_charged_molecule
+from .graphics.rdkdraw import compare_chgd_rdmols
 
 # Typing and Subclassing
-from numpy import number, ndarray
+from .solvation.solvent import Solvent
+from .extratypes import SubstructSummary, Colormap, Figure, Axes, ndarray
+from .charging.types import ResidueChargeMap
+
 from typing import Any, Callable, ClassVar, Iterable, Optional
 from dataclasses import dataclass, field
-
-from .solvation.solvent import Solvent
-from .extratypes import SubstructSummary
-from .charging.types import ResidueChargeMap
 
 # File I/O
 from pathlib import Path
@@ -31,7 +31,7 @@ from openmm.unit import angstrom, nanometer
 
 
 # Polymer representation classes
-@dataclass # TOSELF : does this really even need to be a dataclass?
+@dataclass # TOSELF : does this really need to be a dataclass? (could collapse non-init field and __post_init__ actions with an ordinary __init__)
 class PolymerDir:
     '''For representing standard directory structure and requisite information for polymer structures, force fields, and simulations'''
     parent_dir : Path
@@ -265,6 +265,13 @@ class PolymerDir:
         '''Loads a charged Molecule from a registered charge method by key lookup
         Raises KeyError if the method requested is not registered'''
         return load_matched_charged_molecule(self.structure_files_chgd[charge_method], assume_ordered=True)
+
+    def compare_charges(self, charge_method_1 : str, charge_method_2 : str, cmap : Colormap, *args, **kwargs) -> tuple[Figure, Axes]:
+        '''Plot a heat map showing the atomwise discrepancies in partial charges between any pair of registered charge sets'''
+        chgd_rdmol1 = self.charged_offmol_from_sdf(charge_method_1).to_rdkit()
+        chgd_rdmol2 = self.charged_offmol_from_sdf(charge_method_2).to_rdkit()
+
+        return compare_chgd_rdmols(chgd_rdmol1, chgd_rdmol2, charge_method_1, charge_method_2, cmap, *args, **kwargs)
 
 # FILE POPULATION AND MANAGEMENT
     @update_checkpoint
