@@ -81,7 +81,7 @@ class MolCharger(ABC):
     '''Base interface for defining various methods of generating and storing atomic partial charges'''
     @classmethod
     @abstractproperty
-    def TAG(self):
+    def TAG(cls):
         '''For setting the name of the method as a class attribute in child classes'''
         pass
 
