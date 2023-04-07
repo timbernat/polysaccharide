@@ -1,6 +1,7 @@
 # Typing and Subclassing
 import copy # revise diff_mol generation to eschew this import
 from typing import Union
+from abc import ABC, abstractmethod, abstractproperty
  
 # Cheminformatics
 from rdkit import Chem
@@ -9,6 +10,57 @@ RDMol = Chem.rdchem.Mol
 RDAtom = Chem.rdchem.Atom
 
 
+# Converting to and from various encodings - enables conversion of 3D conformers into 2D structure for representation
+class RDConverter(ABC):
+    '''For converting an existing RDKit Molecule to and from a particular format to gain new properties'''
+    @classmethod
+    @abstractproperty
+    def TAG(cls):
+        pass
+
+    @abstractmethod
+    def convert(self, rdmol : RDMol) -> RDMol:
+        pass
+
+class SMARTSConverter(RDConverter):
+    TAG = 'SMARTS'
+    def convert(self, rdmol : RDMol) -> RDMol:
+        return Chem.MolFromSmarts(Chem.MolToSmarts(rdmol))
+
+class SMILESConverter(RDConverter):
+    TAG = 'SMILES'
+    def convert(self, rdmol : RDMol) -> RDMol:
+        return Chem.MolFromSmiles(Chem.MolToSmiles(rdmol), sanitize=False)
+    
+class CXSMARTSConverter(RDConverter):
+    '''Similar to SMARTSConverter but preserves the 3D structure'''
+    TAG = 'CXSMARTS'
+    def convert(self, rdmol : RDMol) -> RDMol:
+        return Chem.MolFromSmarts(Chem.MolToCXSmarts(rdmol))
+
+class CXSMILESConverter(RDConverter):
+    '''Similar to SMILESConverter but preserves the 3D structure'''
+    TAG = 'CXSMILES'
+    def convert(self, rdmol : RDMol) -> RDMol:
+        return Chem.MolFromSmiles(Chem.MolToCXSmiles(rdmol), sanitize=False)
+
+class InChIConverter(RDConverter):
+    TAG = 'InChI'
+    def convert(self, rdmol : RDMol) -> RDMol:
+        return Chem.AddHs(Chem.MolFromInchi(Chem.MolToInchi(rdmol), removeHs=False, sanitize=False))
+    
+class JSONConverter(RDConverter):
+    TAG = 'JSON'
+    def convert(self, rdmol : RDMol) -> RDMol:
+        return Chem.rdMolInterchange.JSONToMols(Chem.MolToJSON(rdmol))[0]
+    
+RDCONVERTER_REGISTRY = { # keep easily accessible record of all available converter types
+    child.TAG : child()
+        for child in RDConverter.__subclasses__()
+}
+
+
+# Flattening and comparing RDkit Molecules
 def _copy_rd_props(from_rdobj : Union[RDAtom, RDMol], to_rdobj : Union[RDAtom, RDMol]) -> None:
     '''For copying properties between a pair of RDKit Atoms or Mols'''
     # NOTE : will avoid use of GetPropsAsDict() to avoid errors from ridiculously restrictive C++ typing
@@ -18,16 +70,21 @@ def _copy_rd_props(from_rdobj : Union[RDAtom, RDMol], to_rdobj : Union[RDAtom, R
     for prop in from_rdobj.GetPropNames():
         to_rdobj.SetProp(prop, from_rdobj.GetProp(prop))
 
-def flattened_rmdol(rdmol : RDMol) -> RDMol:
-    '''Returns a flattened version of an RDKit molecule for 2D representation'''
-    orig_rdmol = copy.deepcopy(rdmol) # create copy to avoid mutating original
-    for atom in orig_rdmol.GetAtoms():
+def _assign_ordered_atom_map_nums(rdmol : RDMol) -> None:
+    '''Assigns atom's id to its atom map number for all atoms in an RDmol'''
+    for atom in rdmol.GetAtoms():
         atom.SetAtomMapNum(atom.GetIdx()) # need atom map numbers to preserve positional mapping in SMARTS
 
-    SMARTS = Chem.MolToSmarts(orig_rdmol) # convert to labelled SMARTS string
-    flat_mol = Chem.MolFromSmarts(SMARTS) # create new molecule from SMARTS (loads as flattened structure)
+def flattened_rmdol(rdmol : RDMol, converter : RDConverter=RDCONVERTER_REGISTRY['SMARTS']) -> RDMol:
+    '''Returns a flattened version of an RDKit molecule for 2D representation'''
+    orig_rdmol = copy.deepcopy(rdmol) # create copy to avoid mutating original
+    _assign_ordered_atom_map_nums(orig_rdmol) # need atom map numbers to preserve positional mapping in SMARTS
+
+    flat_mol = converter.convert(orig_rdmol) # apply convert for format interchange
+    if set(atom.GetAtomMapNum() for atom in flat_mol.GetAtoms()) == {0}: # hacky workaround for InChI and other formats which discard atom map number - TODO : fix this terriblenesss
+        _assign_ordered_atom_map_nums(flat_mol)
+
     _copy_rd_props(to_rdobj=flat_mol, from_rdobj=orig_rdmol) # clone molecular properties
-    
     for new_atom in flat_mol.GetAtoms():
         _copy_rd_props(to_rdobj=new_atom, from_rdobj=orig_rdmol.GetAtomWithIdx(new_atom.GetAtomMapNum()))
 
