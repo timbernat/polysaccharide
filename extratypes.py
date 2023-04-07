@@ -2,6 +2,10 @@ from typing import Any, Union
 from numpy.typing import ArrayLike
 from numpy import number, ndarray
 
+# Common matplotlib types
+from matplotlib.pyplot import Figure, Axes
+from matplotlib.colors import Colormap, Normalize
+
 from rdkit import Chem
 
 
