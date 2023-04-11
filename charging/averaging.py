@@ -1,8 +1,8 @@
 from collections import defaultdict
 from pathlib import Path
 
+from openff.toolkit import ForceField
 from openff.toolkit.topology.molecule import Molecule
-from openff.toolkit.typing.engines.smirnoff import ForceField
 from openff.toolkit.typing.engines.smirnoff.parameters import LibraryChargeHandler
 
 from .types import AtomIDMap, Accumulator, ResidueChargeMap
