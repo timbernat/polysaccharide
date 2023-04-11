@@ -5,13 +5,14 @@ import re
 
 # Typing and subclassing
 from dataclasses import dataclass, field
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 # OpenForceField
 from openff.units import unit as offunit # need OpenFF version of unit for Interchange positions for some reason
 from openff.interchange import Interchange
 
 from openmm import Integrator
+from openmm.openmm import Force
 from openmm.app import Simulation
 from openmm.app import PDBReporter, StateDataReporter, CheckpointReporter
 Reporter = Union[PDBReporter, StateDataReporter, CheckpointReporter] # for clearer typehinting
@@ -99,11 +100,15 @@ class SimulationParameters:
 
 
 # Functions for creating Simulation (and related) objects
-def create_simulation(interchange : Interchange, integrator : Integrator) -> Simulation:
+def create_simulation(interchange : Interchange, integrator : Integrator, forces : Optional[list[Force]]=None) -> Simulation:
     '''Specifies configuration for an OpenMM Simulation - Interchange load alows many routes for creation'''
     openmm_sys = interchange.to_openmm(combine_nonbonded_forces=True) 
     openmm_top = interchange.topology.to_openmm()
     openmm_pos = interchange.positions.m_as(offunit.nanometer) * nanometer
+
+    if forces:
+        for force in forces:
+            openmm_sys.addForce(force)
 
     simulation = Simulation(openmm_top, openmm_sys, integrator)
     simulation.context.setPositions(openmm_pos)
