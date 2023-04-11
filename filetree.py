@@ -2,10 +2,8 @@ import json
 from pathlib import Path
 import subprocess
 
-from typing import Any, Union
 from .extratypes import JSONSerializable
-
-from . import general
+from .general import iter_len
 
 
 # Methods
@@ -25,7 +23,7 @@ def append_to_json(json_path : Path, **kwargs) -> None:
 def is_empty(path : Path) -> bool:
     '''Check if a directory is empty'''
     assert(path.is_dir())
-    return (general.iter_len(path.iterdir()) == 0) # can't use "len" for generators :(
+    return iter_len(path.iterdir()) == 0 # can't use "len" for generators :(
 
 def clear_dir(path : Path) -> None:
     '''Recursively clear contents of a directory at the given path (depth-first)'''
