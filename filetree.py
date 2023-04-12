@@ -1,24 +1,16 @@
 import json
 from pathlib import Path
+
+from typing import Any, Callable, Optional
 import subprocess
 
 from .extratypes import JSONSerializable
 from .general import iter_len
 
 
-# Methods
+# General-purpose methods
 startfile = lambda path : subprocess.Popen(['xdg-open', path]) # Replacement for os.startfile() functionality, since none natively exists in Linux
 dotless   = lambda suffix : suffix.split('.')[-1] # separate the dot from a SINGLE extension file suffix
-
-def append_to_json(json_path : Path, **kwargs) -> None:
-    '''Add an entry to an existing JSON file'''
-    with json_path.open('r') as json_file:
-        jdat = json.load(json_file)
-
-    jdat.update(**kwargs)
-
-    with json_path.open('w') as json_file:
-        jdat = json.checkpoint(jdat, json_file, indent=4)
 
 def is_empty(path : Path) -> bool:
     '''Check if a directory is empty'''
@@ -36,7 +28,44 @@ def clear_dir(path : Path) -> None:
         else:
             sub_path.unlink()
 
-# Classes
+def prepend_parent(path : Path, new_parent : Path) -> Path:
+    '''Prepends a parent tree to an existing path'''
+    return new_parent / path
+
+def detach_parent(path : Path, curr_parent : Path) -> Path:
+    '''Cuts off a parent tree from an existing path'''
+    return path.relative_to(curr_parent)
+
+def _modify_dict_paths(path_dict : dict[Any, Any], path_fn : Callable[[Any, Path], Path]) -> None:
+    '''Recursively modifies all Path-like values in a dict in-place according to some function'''
+    for key, val in path_dict.items():
+        if isinstance(val, Path): # apply the function to found Paths, modifying their values accordingly
+            path_dict[key] = path_fn(key, val)
+
+        if isinstance(val, dict): # recursive call if sub-values are also dicts with Paths
+            modify_dict_paths(val, path_fn)
+    
+def modify_dict_paths(path_dict : dict[Any, Any], path_fn : Callable[[Any, Path], Path], in_place : bool=False) -> Optional[dict[Any, Any]]:
+    '''Recursively modifies all Path-like values in a dict according to some function
+    Can specify whether to modify in-place or return a modified copy to avoid overwrites'''
+    if in_place:
+        _modify_dict_paths(path_dict, path_fn=path_fn) # implcitly returns None
+    else:
+        copy_dict = {k : v for k, v in path_dict.items()} # create a copy to avoid overwrites
+        _modify_dict_paths(copy_dict, path_fn=path_fn) # modify the copy in-place
+        return copy_dict
+
+# JSON-specific functionality
+def append_to_json(json_path : Path, **kwargs) -> None:
+    '''Add an entry to an existing JSON file'''
+    with json_path.open('r') as json_file:
+        jdat = json.load(json_file)
+
+    jdat.update(**kwargs)
+
+    with json_path.open('w') as json_file:
+        jdat = json.checkpoint(jdat, json_file, indent=4)
+
 class JSONDict(dict):
     '''
     Dict subclass which also updates an underlying JSON file - effectively and on-disc dict
