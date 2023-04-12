@@ -42,15 +42,15 @@ def _apply_averaged_res_chgs(mol : Molecule, residue_charges : ResidueChargeMap)
     new_charges = np.array(new_charges) * elementary_charge # convert to unit-ful array (otherwise assignment won't work)
     mol.partial_charges = new_charges
 
-def apply_averaged_res_chgs(mol : Molecule, residue_charges : ResidueChargeMap, inplace : bool=False) -> Optional[Molecule]:
+def apply_averaged_res_chgs(mol : Molecule, residue_charges : ResidueChargeMap, in_place : bool=False) -> Optional[Molecule]:
     '''
     Takes an OpenFF Molecule and a residue-wise map of averaged partial charges and applies the mapped charges to the Molecule
 
-    Can optionally specify whether to do charge assignment in-place (with "inplace" flag)
-    -- If inplace, will apply to the Molecule passed and return None
-    -- If not inplace, will create a copy, charge that, and return the resulting Molecule
+    Can optionally specify whether to do charge assignment in-place (with "in_place" flag)
+    -- If in_place, will apply to the Molecule passed and return None
+    -- If not in_place, will create a copy, charge that, and return the resulting Molecule
     '''
-    if inplace:
+    if in_place:
         _apply_averaged_res_chgs(mol, residue_charges)
     else:
         new_mol = copy(mol) # create replica of Molecule to leave charges undisturbed
@@ -114,7 +114,7 @@ class ABE10AverageCharger(MolCharger):
         self.residue_charges = residue_charges
 
     def charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
-        return apply_averaged_res_chgs(uncharged_mol, self.residue_charges, inplace=False)
+        return apply_averaged_res_chgs(uncharged_mol, self.residue_charges, in_place=False)
 
 CHARGER_REGISTRY = { # Keep a registry of all SDF charger implementations for convenience
     charger.TAG : charger
