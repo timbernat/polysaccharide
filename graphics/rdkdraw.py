@@ -7,7 +7,7 @@ from .named_colors import WHITE
 
 # Plotting
 import PIL
-from matplotlib.pyplot import Figure, Axes
+import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize, Colormap
 from rdkit.Chem.Draw import rdMolDraw2D, SimilarityMaps, IPythonConsole
            
@@ -35,8 +35,8 @@ def rdmol_prop_heatmap(rdmol : RDMol, prop : str, cmap : Colormap, norm : Normal
     
     return imageutils.img_from_bytes(img_bytes)
 
-def compare_chgd_rdmols(chgd_rdmol_1 : RDMol, chgd_rdmol_2 : RDMol, chg_method_1 : str, chg_method_2 : str, cmap : Colormap,
-                         flatten : bool=True, converter : molutils.RDConverter=molutils.RDCONVERTER_REGISTRY['SMARTS'], **heatmap_args) -> tuple[Figure, Axes]:
+def compare_chgd_rdmols(chgd_rdmol_1 : RDMol, chgd_rdmol_2 : RDMol, chg_method_1 : str, chg_method_2 : str, cmap : Colormap=plt.get_cmap('turbo'),
+                         flatten : bool=True, converter : molutils.RDConverter=molutils.RDCONVERTER_REGISTRY['SMARTS'], **heatmap_args) -> tuple[plt.Figure, plt.Axes]:
     '''Plot a labelled heatmap of the charge differences between 2 strucuturally identical RDKit Molecules with different partial charges'''
     if flatten:
         chgd_rdmol_1 = molutils.flattened_rmdol(chgd_rdmol_1, converter=converter)
