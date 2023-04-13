@@ -32,28 +32,21 @@ def prepend_parent(path : Path, new_parent : Path) -> Path:
     '''Prepends a parent tree to an existing path'''
     return new_parent / path
 
-def detach_parent(path : Path, curr_parent : Path) -> Path:
+def detach_parent(path : Path, old_parent : Path) -> Path:
     '''Cuts off a parent tree from an existing path'''
-    return path.relative_to(curr_parent)
+    return path.relative_to(old_parent)
 
-def _modify_dict_paths(path_dict : dict[Any, Any], path_fn : Callable[[Any, Path], Path]) -> None:
-    '''Recursively modifies all Path-like values in a dict in-place according to some function'''
-    for key, val in path_dict.items():
-        if isinstance(val, Path): # apply the function to found Paths, modifying their values accordingly
-            path_dict[key] = path_fn(key, val)
+def exchange_parent(path : Path, old_parent : Path, new_parent : Path) -> Path:
+    '''Exchanges the parent tree of a path for another parent tree'''
+    return prepend_parent(path=detach_parent(path, old_parent), new_parent=new_parent)
 
-        if isinstance(val, dict): # recursive call if sub-values are also dicts with Paths
-            modify_dict_paths(val, path_fn)
-    
-def modify_dict_paths(path_dict : dict[Any, Any], path_fn : Callable[[Any, Path], Path], in_place : bool=False) -> Optional[dict[Any, Any]]:
-    '''Recursively modifies all Path-like values in a dict according to some function
-    Can specify whether to modify in-place or return a modified copy to avoid overwrites'''
-    if in_place:
-        _modify_dict_paths(path_dict, path_fn=path_fn) # implcitly returns None
-    else:
-        copy_dict = {k : v for k, v in path_dict.items()} # create a copy to avoid overwrites
-        _modify_dict_paths(copy_dict, path_fn=path_fn) # modify the copy in-place
-        return copy_dict
+def local_rename(path : Path, new_name : str) -> Path:
+    '''Performs file rename relative to the parent directory (NOT the cwd)'''
+    return path.rename(path.with_name(new_name))
+
+def local_rename_ext(path : Path, new_stem : str) -> Path:
+    '''Performs file rename relative to the parent directory (NOT the cwd), preserving the extension of the original file'''
+    return path.rename(path.with_stem(new_stem))
 
 # JSON-specific functionality
 def append_to_json(json_path : Path, **kwargs) -> None:
