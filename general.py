@@ -6,7 +6,7 @@ from functools import reduce
 from operator import mul
 
 # Typing and Subclassing
-from typing import Any, Iterable, Union
+from typing import Any, Callable, Iterable, Optional, Union
 
 # Units
 from pint import Quantity as PintQuantity
@@ -30,6 +30,25 @@ for case, idx in greek_start_idxs.items():
         letter_name : chr(idx + i)
             for i, letter_name in enumerate(greek_letter_names)
     }
+
+# Data containers
+def _modify_dict(path_dict : dict[Any, Any], modifier_fn : Callable[[Any, Any], tuple[Any, bool]]) -> None:
+    '''Recursively modifies all values in a dict in-place according to some function'''
+    for key, val in path_dict.items():
+        if isinstance(val, dict): # recursive call if sub-values are also dicts with Paths
+            modify_dict(val, modifier_fn)
+        else:
+            path_dict[key] = modifier_fn(key, val) 
+    
+def modify_dict(path_dict : dict[Any, Any], modifier_fn : Callable[[Any, Any], Any], in_place : bool=False) -> Optional[dict[Any, Any]]:
+    '''Recursively modifies all Path-like values in a dict according to some function
+    Can specify whether to modify in-place or return a modified copy to avoid overwrites'''
+    if in_place:
+        _modify_dict(path_dict, modifier_fn=modifier_fn) # implcitly returns None
+    else:
+        copy_dict = {k : v for k, v in path_dict.items()} # create a copy to avoid overwrites
+        _modify_dict(copy_dict, modifier_fn=modifier_fn) # modify the copy in-place
+        return copy_dict
 
 # Mathematical functions
 def product(container : Iterable):
