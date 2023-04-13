@@ -56,7 +56,9 @@ def packmol_solvate_wrapper(template_path : Path, polymer_pdb : Path, solvent_pd
     for ref_path in ref_paths:
         temp_path = outdir/ref_path.name
         temp_paths.append(temp_path)
-        copyfile(ref_path, temp_path)
+        
+        if not temp_path.exists(): # copy the reference file to the target if not already present
+            copyfile(ref_path, temp_path)
 
     inp_temp = populate_solv_inp_template(
         outname=outname, 
