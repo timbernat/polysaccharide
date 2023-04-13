@@ -13,6 +13,7 @@ from .charging.types import ResidueChargeMap
 from typing import Any, Callable, ClassVar, Iterable, Optional
 
 # File I/O
+import copy
 from pathlib import Path
 from shutil import copyfile, copytree
 import json, pickle
@@ -47,6 +48,16 @@ class AlreadySolvatedError(Exception):
     pass
 
 # Polymer representation classes
+def create_subdir_properties(cls):
+    '''For dynamically adding all subdirectories as accessible property fields - cleans up namespace for PolymerDir'''
+    for dir_name in cls._SUBDIRS:
+        def make_prop(subdir_name : str):
+            return property(fget=lambda self : self.subdirs[subdir_name])
+        
+        setattr(cls, dir_name, make_prop(dir_name))
+    return cls
+
+@create_subdir_properties
 class PolymerDir:
     '''For representing standard directory structure and requisite information for polymer structures, force fields, and simulations'''
     _SUBDIRS : ClassVar[tuple[str, ...]] = ( # directories with these names will be present in all polymer directories by standard
@@ -86,11 +97,12 @@ class PolymerDir:
         self._offmol       : Molecule = None
 
         # Filetree creation
-        self.subdirs : dict[str, Path] = {}
-        for dir_name in PolymerDir._SUBDIRS:
-            subdir = self.path/dir_name
-            setattr(self, dir_name, subdir) # mirrors subdirs as directly-accessible attributes
-            self.subdirs[dir_name] = subdir
+        self.subdirs         : dict[str, Path] = {} # reference specific directories corresponding to the standard class-wide directories
+        self.subdirs_reverse : dict[str, Path] = {} # also create reverse lookup for getting attributes for parent directory paths
+        for dirname in PolymerDir._SUBDIRS:
+            subdir = self.path/dirname
+            self.subdirs[dirname] = subdir
+            self.subdirs_reverse[subdir] = dirname
 
         self.checkpoint_path : Path = self.checkpoint/f'{self.mol_name}_checkpoint.pkl' # NOTE : must be called AFTER subdir tree is built
         self.build_tree()
@@ -121,7 +133,34 @@ class PolymerDir:
         filetree.clear_dir(self.path)
         LOGGER.warning(f'Cleared all contents of {self.mol_name}')
 
-    def clone(self, dest_dir : Optional[Path]=None, clone_name : Optional[str]=None, exclusion : Optional[float]=None, clone_sims : bool=False) -> 'PolymerDir':
+# ATTRIBUTE TRANSFER AND CLONING
+    def transfer_file_attr(self, attr_name : str, other : 'PolymerDir') -> None:
+        '''Copy a file at a particular attribute, modify its path, and set the appropriate attribute in the receiving PolymerDir'''
+        file_path = getattr(self, attr_name)
+        assert(isinstance(file_path, Path))
+
+        subdir_name = self.subdirs_reverse[file_path.parent]
+        curr_subdir = getattr(self, subdir_name)
+        new_subdir = getattr(other, subdir_name)
+
+        new_file_path = filetree.exchange_parent(file_path, old_parent=curr_subdir, new_parent=new_subdir) # create a new path with the destination parent tree
+        new_file_path = new_file_path.with_name(new_file_path.name.replace(self.mol_name, other.mol_name)) # replace any references to the original file in the files name
+
+        copyfile(file_path, new_file_path)
+        setattr(other, attr_name, new_file_path)
+        LOGGER.info(f'Transferred file ref at {self.mol_name}.{attr_name} to {new_file_path}')
+
+    def transfer_attr(self, attr_name : str, other : 'PolymerDir') -> None:
+        '''Copy an attributes value to another PolymerDir instance'''
+        attr = getattr(self, attr_name)
+        if isinstance(attr, Path):
+            self.transfer_file_attr(attr_name, other)
+        else:
+            setattr(other, attr_name, copy.copy(attr)) # create copy of value to avoid shared references
+            LOGGER.info(f'Copied attribute {attr_name} from {self.mol_name} to {other.mol_name}')
+
+    def clone(self, dest_dir : Optional[Path]=None, clone_name : Optional[str]=None, exclusion : Optional[float]=None, clone_solvent : bool=True,
+              clone_structures : bool=False, clone_monomers : bool=True, clone_ff : bool=True, clone_charges : bool=False, clone_sims : bool=False) -> 'PolymerDir':
         '''
         Create a copy of a PolymerDir in a specified directory with a new name, updating file references accordingly
         If neither a new Path nor name are specified, will default to cloning in the same parent directory with "_clone" affixed to self's name
@@ -141,27 +180,30 @@ class PolymerDir:
             raise PermissionError(f'Cannot clone PolymerDir at {self.path} over itself')
 
         # creating the clone
-        LOGGER.info(f'Cloning PolymerDir {self.mol_name} at {self.path}')
+        LOGGER.info(f'Creating clone of {self.mol_name}')
         clone = PolymerDir(parent_dir=dest_dir, mol_name=clone_name, exclusion=exclusion)
+        clone.base_mol_name = self.mol_name # keep record of identity of original molecule
 
-        # Copying subdirectories
-        not_copied = ['checkpoint']
-        if not clone_sims: # if specified, also avoid copying over all simulation results (can be space- and time-intensive)
-            not_copied.append('MD')
-        
-        for dirname, subdir in self.subdirs.items():
-            if dirname not in not_copied:
-                copytree(subdir, clone.path/subdir.name, dirs_exist_ok=True) # !NOTE! - must have exist_ok=True (folders already exist after clone init, albeit empty)
+        if clone_solvent:
+            self.transfer_attr('solvent', clone)
 
-        # copying attributes, all while updating paths to relevant subfiles
-        def path_updater(attr : str, pathval : Path):
-            '''Changes the parent tree of a single Path-valued attribute to the clone's path'''
-            if attr == 'parent_dir': # ignore the parent directory attr, as this is NOT a child of the main path
-                return pathval
-            return clone.path / pathval.relative_to(self.path)
-        
-        clone.__dict__ = filetree.modify_dict_paths(self.__dict__, path_fn=path_updater, in_place=False) # !CRITICAL! that this not be in-place, otherwise will overwrite the source PolymerDir's attributes
-        print(clone, clone.__dict__)
+        if clone_structures:
+            self.transfer_attr('structure_file', clone)
+
+        if clone_monomers:
+            self.transfer_attr('monomer_file', clone)
+            self.transfer_attr('monomer_file_chgd', clone)
+
+        if clone_ff:
+            self.transfer_attr('ff_file', clone)
+
+        if clone_charges:
+            self.transfer_attr('charges', clone)
+            # TODO : implement transfer of SDF file dict (need more flexible implementation of transfer_file_attr)
+
+        if clone_sims:
+            copytree(self.MD, clone.MD, dirs_exist_ok=True)
+            
         clone.to_file() # ensure changes are reflected in clone;s checkpoint
         LOGGER.info(f'Successfully created clone of {self.mol_name} at {clone.path}')
 
@@ -396,57 +438,9 @@ class PolymerDir:
         self.populate_pdb(struct_dir, assert_exists=True)
         
         if monomer_dir is None:
-            monomer_dir =  struct_dir # if separate monomer folder isn't explicitly specified, assume monomers are in structure file folder
+            monomer_dir = struct_dir # if separate monomer folder isn't explicitly specified, assume monomers are in structure file folder
         self.populate_monomers(monomer_dir, assert_exists=False) # don't force error if no monomers are found
 
-    @update_checkpoint
-    def solvate(self, template_path : Path, solvent : Solvent, exclusion : float=None, precision : int=4) ->  'PolymerDir':
-        '''Applies packmol solvation routine to an extant PolymerDir'''
-        if not self.has_structure_data:
-            raise MissingStructureData
-        
-        if not self.solvent is None:
-            raise AlreadySolvatedError
-
-        if exclusion is None:
-            exclusion = self.exclusion # default to same exclusion as parent
-
-        solvated_name = f'{self.mol_name}_solv_{solvent.name}'
-        solvated_dir = PolymerDir(parent_dir=self.parent_dir, mol_name=solvated_name)
-        solvated_dir.base_mol_name = self.mol_name # TOSELF : temporary, ensure that a solvated mol is stil keyable by the original molecule name
-
-        solvated_dir.exclusion = exclusion
-        box_vectors = self.mol_bbox + 2*exclusion # can't use either dirs "box_vectors" property directly, since the solvated dir has no structure file yet and the old dir may have different exclusion
-        V_box = general.product(box_vectors)
-
-        LOGGER.info(f'Creating copy of {self.mol_name}, now solvated in {solvent.name}')
-        solvated_dir.structure_file = packmol_solvate_wrapper( # generate and point to solvated PDB structure
-            polymer_pdb = self.structure_file, 
-            solvent_pdb = solvent.structure_file, 
-            outdir      = solvated_dir.structures, 
-            outname     = solvated_name, 
-            template_path = template_path,
-            N           = round(V_box * solvent.number_density),
-            box_dims    = box_vectors,
-            precision   = precision
-        )
-
-        if self.has_monomer_data:
-            solvated_mono_data = {**self.monomer_data}           # note that this is explicitly UNCHARGED monomer data
-            for field, values in solvated_mono_data.items():     # this merge strategy ensures solvent data does not overwrite or append extraneous data
-                values.update(solvent.monomer_json_data[field])  # specifically, charges will not be written to an uncharged json (which would screw up graph match and load)
-
-            solva_mono_path = solvated_dir.monomers/f'{solvated_name}.json'
-            with solva_mono_path.open('w') as solv_mono_file:
-                json.dump(solvated_mono_data, solv_mono_file, indent=4)
-            solvated_dir.monomer_file = solva_mono_path
-
-        solvated_dir.solvent = solvent # set this only AFTER solvated files have been created
-        solvated_dir.to_file() # ensure checkpoint file is created for newly solvated directory
-        LOGGER.info('Successfully converged solvent packing')
-
-        return solvated_dir
-    
     @update_checkpoint
     def create_charged_monomer_file(self, residue_charges : ResidueChargeMap):
         '''Create a new copy of the current monomer file with residue-wise mapping of substructure id to charges'''
@@ -455,7 +449,7 @@ class PolymerDir:
 
         if self.solvent is not None and self.solvent.charges is not None: # ensure solvent "monomer" charge entries are also recorded
             residue_charges = {**residue_charges, **self.solvent.monomer_json_data['charges']} 
-        chgd_monomer_data = {**self.monomer_data} # load uncharged monomer_data and create copy
+        chgd_monomer_data = {**self.monomer_data} # load uncharged monomer_data and create copy - TOSELF : this variable name is confusing but is correct (will be charged at end)
         chgd_monomer_data['charges'] = residue_charges
 
         chgd_mono_path = self.monomer_file.with_name(f'{self.mol_name}_charged.json')
@@ -486,6 +480,107 @@ class PolymerDir:
             return forcefield, lib_chgs
         return forcefield
 
+# SOLVATION
+    # doesn't need "update_checkpoint" decorator, as no own attrs are being updated
+    def solvate(self, solvent : Solvent, template_path : Path, dest_dir : Path=None, exclusion : float=None, precision : int=4) -> 'PolymerDir':
+        '''Create a clone of a PolymerDir and solvate it in a box defined by the polymer's bounding box + an exclusion buffer'''
+        if not self.has_structure_data:
+            raise MissingStructureData
+        
+        if self.solvent is not None:
+            raise AlreadySolvatedError
+        
+        if exclusion is None:
+            exclusion = self.exclusion
+
+        LOGGER.info(f'Solvating "{self.mol_name}" in {solvent.name}')
+        solvated_name = f'{self.mol_name}_solv_{solvent.name}'
+        solva_dir = self.clone( # logging performed implicitly within cloning and solvating steps here
+            dest_dir=dest_dir,
+            clone_name=solvated_name,
+            exclusion=exclusion,
+            clone_solvent=False,
+            clone_structures=True,
+            clone_monomers=True,
+            clone_ff=True,
+            clone_charges=False,
+            clone_sims=False
+        ) 
+
+        solva_dir.structure_file = packmol_solvate_wrapper( # generate and point to solvated PDB structure
+            polymer_pdb = self.structure_file, 
+            solvent_pdb = solvent.structure_file, 
+            outdir      = solva_dir.structures, 
+            outname     = solvated_name, 
+            template_path = template_path,
+            N           = round(solva_dir.box_volume * solvent.number_density),
+            box_dims    = solva_dir.box_vectors,
+            precision   = precision
+        )
+
+        if solva_dir.has_monomer_data: # this will be copied over during the cloning process (ensure "clone_monomers" flag is set)
+            solvated_mono_data = {**solva_dir.monomer_data}   # note that this is explicitly UNCHARGED monomer data
+            for field, values in solvated_mono_data.items():     # this merge strategy ensures solvent data does not overwrite or append extraneous data
+                values.update(solvent.monomer_json_data[field])  # specifically, charges will not be written to an uncharged json (which would screw up graph match and load)
+
+            with solva_dir.monomer_file.open('w') as solv_mono_file:
+                json.dump(solvated_mono_data, solv_mono_file, indent=4)
+
+        solva_dir.solvent = solvent # set this only AFTER solvated files have been created
+        solva_dir.to_file() # ensure checkpoint file is created for newly solvated directory
+        LOGGER.info('Successfully converged on solvent packing')
+
+        return solva_dir
+
+    @update_checkpoint
+    def solvate_legacy(self, solvent : Solvent, template_path : Path, exclusion : float=None, precision : int=4) ->  'PolymerDir':
+        '''Applies packmol solvation routine to an extant PolymerDir
+        This is the original implementation of solvation, kept for debug reasons'''
+        if not self.has_structure_data:
+            raise MissingStructureData
+        
+        if self.solvent is not None:
+            raise AlreadySolvatedError
+
+        if exclusion is None:
+            exclusion = self.exclusion # default to same exclusion as parent
+
+        solvated_name = f'{self.mol_name}_solv_{solvent.name}'
+        solva_dir = PolymerDir(parent_dir=self.parent_dir, mol_name=solvated_name)
+        solva_dir.base_mol_name = self.mol_name # TOSELF : temporary, ensure that a solvated mol is stil keyable by the original molecule name
+
+        solva_dir.exclusion = exclusion
+        box_vectors = self.mol_bbox + 2*exclusion # can't use either dirs "box_vectors" property directly, since the solvated dir has no structure file yet and the old dir may have different exclusion
+        V_box = general.product(box_vectors)
+
+        LOGGER.info(f'Creating copy of {self.mol_name}, now solvated in {solvent.name}')
+        solva_dir.structure_file = packmol_solvate_wrapper( # generate and point to solvated PDB structure
+            polymer_pdb = self.structure_file, 
+            solvent_pdb = solvent.structure_file, 
+            outdir      = solva_dir.structures, 
+            outname     = solvated_name, 
+            template_path = template_path,
+            N           = round(V_box * solvent.number_density),
+            box_dims    = box_vectors,
+            precision   = precision
+        )
+
+        if self.has_monomer_data:
+            solvated_mono_data = {**self.monomer_data}           # note that this is explicitly UNCHARGED monomer data
+            for field, values in solvated_mono_data.items():     # this merge strategy ensures solvent data does not overwrite or append extraneous data
+                values.update(solvent.monomer_json_data[field])  # specifically, charges will not be written to an uncharged json (which would screw up graph match and load)
+
+            solva_mono_path = solva_dir.monomers/f'{solvated_name}.json'
+            with solva_mono_path.open('w') as solv_mono_file:
+                json.dump(solvated_mono_data, solv_mono_file, indent=4)
+            solva_dir.monomer_file = solva_mono_path
+
+        solva_dir.solvent = solvent # set this only AFTER solvated files have been created
+        solva_dir.to_file() # ensure checkpoint file is created for newly solvated directory
+        LOGGER.info('Successfully converged solvent packing')
+
+        return solva_dir
+    
 # SIMULATION
     @property
     def completed_sims(self) -> list[Path]:
@@ -600,7 +695,7 @@ class PolymerDirManager:
 
             for mol_dir in self.mol_dirs_list:
                 if (mol_dir.solvent is None): # don't double-solvate any already-solvated systems
-                    solv_dir = mol_dir.solvate(template_path=template_path, solvent=solvent, exclusion=exclusion)
+                    solv_dir = mol_dir.solvate(solvent=solvent, template_path=template_path, exclusion=exclusion)
                     self.mol_dirs_list.append(solv_dir) # ultimately pointless, as this will be cleared and reloaded upon refresh. Still, nice to be complete :)
 
 # PURGING (DELETION) METHODS
