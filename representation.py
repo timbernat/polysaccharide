@@ -393,12 +393,12 @@ class PolymerDir:
         Raises KeyError if the method requested is not registered'''
         return load_matched_charged_molecule(self.structure_files_chgd[charge_method], assume_ordered=True)
 
-    def compare_charges(self, charge_method_1 : str, charge_method_2 : str, cmap : Colormap, *args, **kwargs) -> tuple[Figure, Axes]:
+    def compare_charges(self, charge_method_1 : str, charge_method_2 : str, *args, **kwargs) -> tuple[Figure, Axes]:
         '''Plot a heat map showing the atomwise discrepancies in partial charges between any pair of registered charge sets'''
         chgd_rdmol1 = self.charged_offmol_from_sdf(charge_method_1).to_rdkit()
         chgd_rdmol2 = self.charged_offmol_from_sdf(charge_method_2).to_rdkit()
 
-        return compare_chgd_rdmols(chgd_rdmol1, chgd_rdmol2, charge_method_1, charge_method_2, cmap, *args, **kwargs)
+        return compare_chgd_rdmols(chgd_rdmol1, chgd_rdmol2, charge_method_1, charge_method_2, *args, **kwargs)
 
 # FILE POPULATION AND MANAGEMENT
     @staticmethod
