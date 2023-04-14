@@ -1,6 +1,7 @@
 from collections import defaultdict
 from pathlib import Path
 
+from rdkit import Chem
 from openff.toolkit import ForceField
 from openff.toolkit.topology.molecule import Molecule
 from openff.toolkit.typing.engines.smirnoff.parameters import LibraryChargeHandler
@@ -83,16 +84,32 @@ def write_lib_chgs_from_mono_data(monomer_data : dict[str, dict], offxml_src : P
     lc_handler = forcefield["LibraryCharges"]
     lib_chgs = [] #  all library charges generated from the averaged charges for each residue
     for resname, charge_dict in monomer_data['charges'].items(): # ensures no uncharged structure are written as library charges (may be a subset of the monomers structures in the file)
-        lc_entry = { # stringify charges into form usable for library charges
-            f'charge{cid}' : f'{charge} * elementary_charge' 
-                for cid, charge in charge_dict.items()
-        } 
+        # NOTE : original implementation deprecated due to imcompatibility with numbered ports, kept in comments here for backward compatibility and debug reasons
+        # lc_entry = { # stringify charges into form usable for library charges
+        #     f'charge{cid}' : f'{charge} * elementary_charge' 
+        #         for cid, charge in charge_dict.items()
+        # } 
+        # lc_entry['smirks'] = monomer_data['monomers'][resname] # add SMIRKS string to library charge entry to allow for correct labelling
+        
+        lc_entry = {}
+        rdmol = Chem.MolFromSmarts(monomer_data['monomers'][resname])
 
-        lc_entry['smirks'] = monomer_data['monomers'][resname] # add SMIRKS string to library charge entry to allow for correct labelling
+        new_atom_id = 1 # counter for remapping atom ids - NOTE : cannot start at 0, since that would denote an invalid atom
+        for atom in sorted(rdmol.GetAtoms(), key=lambda atom : atom.GetAtomMapNum()): # renumber according to map number order, NOT arbitrary RDKit atom ordering
+            if atom.GetAtomicNum(): # if the atom is not wild type or invalid
+                old_map_num = atom.GetAtomMapNum() # TOSELF : order of operations in this clause is highly important (leave as is if refactoring!)
+                lc_entry[f'charge{new_atom_id}'] = f'{charge_dict[str(old_map_num)]} * elementary_charge'
+
+                atom.SetAtomMapNum(new_atom_id)
+                new_atom_id += 1; # increment valid atom index
+            else:
+                atom.SetAtomMapNum(0) # blank out invalid atoms in SMARTS numbering
+
+        lc_entry['smirks'] = Chem.MolToSmarts(rdmol)  # convert renumbered mol back to SMARTS to use for SMIRNOFF charge labelling
         lc_params = LibraryChargeHandler.LibraryChargeType(allow_cosmetic_attributes=True, **lc_entry) # must enable cosmetic params for general kwarg passing
         
         lc_handler.add_parameter(parameter=lc_params)
         lib_chgs.append(lc_params)  # record library charges for reference
-    forcefield.to_file(output_path) # write modified library charges to new xml (avoid overwrites in case of mistakes)
     
+    forcefield.to_file(output_path) # write modified library charges to new xml (avoid overwrites in case of mistakes)
     return forcefield, lib_chgs
