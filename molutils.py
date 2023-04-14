@@ -75,8 +75,11 @@ def _assign_ordered_atom_map_nums(rdmol : RDMol) -> None:
     for atom in rdmol.GetAtoms():
         atom.SetAtomMapNum(atom.GetIdx()) # need atom map numbers to preserve positional mapping in SMARTS
 
-def flattened_rmdol(rdmol : RDMol, converter : RDConverter=RDCONVERTER_REGISTRY['SMARTS']) -> RDMol:
+def flattened_rmdol(rdmol : RDMol, converter : Union[str, RDConverter]='SMARTS') -> RDMol:
     '''Returns a flattened version of an RDKit molecule for 2D representation'''
+    if isinstance(converter, str): # simplifies external function calls (don't need to be aware of underlying RDConverter class explicitly)
+        converter = RDCONVERTER_REGISTRY[converter] # perform lookup if only name is passed
+
     orig_rdmol = copy.deepcopy(rdmol) # create copy to avoid mutating original
     _assign_ordered_atom_map_nums(orig_rdmol) # need atom map numbers to preserve positional mapping in SMARTS
 
