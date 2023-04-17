@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import re
+import numpy as np
 
 # Typing and subclassing
 from dataclasses import dataclass, field
@@ -24,7 +25,6 @@ from openmm.unit import nanosecond, picosecond, femtosecond
 from openmm.unit import atmosphere, kelvin, nanometer
 
 
-
 @dataclass
 class SimulationParameters:
     '''For recording the parameters used to run an OpenMM Simulation'''
@@ -42,11 +42,19 @@ class SimulationParameters:
 
     @property
     def num_steps(self) -> int:
+        '''Total number of steps in the simulation'''
         return round(self.total_time / self.timestep)
     
     @property
     def record_freq(self) -> int:
+        '''Number of steps between each taken sample'''
         return round(self.num_steps / self.num_samples)
+    
+    @property
+    def time_points(self) -> np.ndarray[int]:
+        '''An array of the time data points represented by the given sampling rate and sim time'''
+        return (np.arange(0, self.num_steps, step=self.record_freq) + self.record_freq)* self.timestep # extra offset by recording frequency need to align indices (not 0-indexed)
+
     
     # JSON serialization
     def serialized_json_dict(self) -> dict[str, Any]:
@@ -125,7 +133,7 @@ def run_simulation(simulation : Simulation, output_folder : Path, output_name : 
 
     # for saving pdb frames and reporting state/energy data
     pdb_rep = PDBReporter(f'{folder_name}/{output_name}_traj.pdb', sim_params.record_freq)  # save frames at the specified interval
-    state_rep = StateDataReporter(f'{folder_name}/{output_name}_data.csv', sim_params.record_freq, **sim_params.reported_state_data)
+    state_rep = StateDataReporter(f'{folder_name}/{output_name}_state_data.csv', sim_params.record_freq, **sim_params.reported_state_data)
     for rep in (pdb_rep, state_rep):
         simulation.reporters.append(rep) # add any desired reporters to simulation for tracking
 
