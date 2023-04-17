@@ -1,6 +1,5 @@
 # General imports
 from datetime import datetime
-DATETIME_FMT = '%m-%d-%Y_at_%H-%M-%S_%p' # formatted string which can be used in file names without error
 
 from functools import reduce
 from operator import mul
@@ -31,6 +30,7 @@ for case, idx in greek_start_idxs.items():
             for i, letter_name in enumerate(greek_letter_names)
     }
 
+
 # Data containers
 def _modify_dict(path_dict : dict[Any, Any], modifier_fn : Callable[[Any, Any], tuple[Any, bool]]) -> None:
     '''Recursively modifies all values in a dict in-place according to some function'''
@@ -50,10 +50,12 @@ def modify_dict(path_dict : dict[Any, Any], modifier_fn : Callable[[Any, Any], A
         _modify_dict(copy_dict, modifier_fn=modifier_fn) # modify the copy in-place
         return copy_dict
 
+
 # Mathematical functions
 def product(container : Iterable):
     '''Analogous to builtin sum()'''
     return reduce(mul, container)
+
 
 # Helper methods for builtin data structures
 def iter_len(itera : Iterable):
@@ -70,7 +72,14 @@ def sort_dict_by_values(targ_dict : dict, reverse : bool=False) -> dict[Any, Any
             for key in sorted(targ_dict, key=lambda k : targ_dict[k], reverse=reverse)
     }
 
+
 # Date and time formatting
+DATETIME_FMT = '%m-%d-%Y_at_%H-%M-%S_%p' # formatted string which can be used in file names without error
+
+def extract_time(timestamp : str) -> str:
+    '''De-format a timestamped string and extract just the timestamp'''
+    return datetime.strptime(timestamp, DATETIME_FMT)
+
 def timestamp_now(fmt_str : str=DATETIME_FMT) -> str:
     '''
     Return a string timestamped with the current date and time (at the time of calling)
@@ -78,7 +87,11 @@ def timestamp_now(fmt_str : str=DATETIME_FMT) -> str:
     '''
     return datetime.now().strftime(fmt_str)
 
-# Functions for dealing with units
+
+# Utilities for dealing with units
+class MissingUnitsError(Exception):
+    pass
+
 def hasunits(obj : Any) -> bool:
     '''Naive but effective way of checking for pint and openmm units'''
     return any(hasattr(obj, attr) for attr in ('unit', 'units')) 
