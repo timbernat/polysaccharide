@@ -584,8 +584,23 @@ class PolymerDir:
 # SIMULATION
     @property
     def completed_sims(self) -> list[Path]:
-        '''Return paths to all non-empty simulation subdirectories'''
+        '''Return paths to all extant, non-empty simulation subdirectories'''
         return [sim_dir for sim_dir in self.MD.iterdir() if not filetree.is_empty(sim_dir)]
+    
+    @property
+    def chrono_sims(self) -> list[Path]:
+        '''Return paths of all extant simulation subdirectories in chronological order of creation'''
+        return sorted(self.completed_sims, key=lambda path : general.extract_time(path.stem))
+    
+    @property
+    def oldest_sim_dir(self) -> Path:
+        '''Return the least recent simulation subdir'''
+        return self.chrono_sims[0]
+
+    @property
+    def newest_sim_dir(self) -> Path:
+        '''Return the most recent simulation subdir'''
+        return self.chrono_sims[-1]
 
     def make_sim_dir(self, affix : Optional[str]='') -> Path:
         '''Create a new timestamped simulation results directory'''
