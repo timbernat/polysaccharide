@@ -4,6 +4,7 @@ from polymer_utils.general import hasunits, MissingUnitsError
 
 # General imports
 from itertools import combinations
+from pathlib import Path
 
 # Numeric processing and plotting
 import mdtraj as mdt
@@ -14,6 +15,15 @@ import pandas as pd
 from openmm.unit import Quantity  # purely for typehints
 from openmm.unit import nanometer
 
+
+# File I/O
+def load_traj(traj_path : Path, topo_path : Path, sample_interval : int=1, remove_solvent : bool=True, inplace : bool=True) -> mdt.Trajectory:
+    '''Wrapper to load trajectories from files (avoids mdtraj import in external modules)'''
+    traj = mdt.load(traj_path, top=topo_path, stride=sample_interval)
+    if remove_solvent:
+        traj = traj.remove_solvent(inplace=inplace) # don't generate new copy when de-solvating
+    
+    return traj
 
 # Data output functions (mediated via DataFrames)
 def acquire_rdfs(traj : mdt.Trajectory, max_rad : Quantity=1*nanometer) -> pd.DataFrame:
