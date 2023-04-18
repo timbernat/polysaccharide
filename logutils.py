@@ -1,4 +1,4 @@
-import logging
+import datetime, logging
 from pathlib import Path
 from typing import Iterable
 
@@ -7,6 +7,14 @@ LOG_FORMATTER = logging.Formatter('%(asctime)s.%(msecs)03d [%(levelname)-7s:%(mo
 
 class MultiLogFileHandler(logging.FileHandler):
     '''Subclass to cut down boilerplate of logfile I/O for loggers with multiple origins'''
+    def __init__(self, *args, **kwargs) -> None:
+        self._start_time = datetime.now()
+        super().__init__(*args, **kwargs)
+
+    @property
+    def runtime(self):
+        return datetime.now() - self._start_time
+
     def add_to_loggers(self, *loggers : list[logging.Logger]) -> None:
         for logger in loggers:
             logger.addHandler(self)
