@@ -30,6 +30,14 @@ for case, idx in greek_start_idxs.items():
             for i, letter_name in enumerate(greek_letter_names)
     }
 
+# Missing should-be builtins
+def product(container : Iterable):
+    '''Analogous to builtin sum()'''
+    return reduce(mul, container)
+
+def xor(a : Any, b : Any) -> bool:
+    '''Boolean exclusive-or for two arbitrary variables (not a builtin for some reason)'''
+    return bool(a) != bool(b)
 
 # Data containers
 def _modify_dict(path_dict : dict[Any, Any], modifier_fn : Callable[[Any, Any], tuple[Any, bool]]) -> None:
@@ -50,13 +58,6 @@ def modify_dict(path_dict : dict[Any, Any], modifier_fn : Callable[[Any, Any], A
         _modify_dict(copy_dict, modifier_fn=modifier_fn) # modify the copy in-place
         return copy_dict
 
-
-# Mathematical functions
-def product(container : Iterable):
-    '''Analogous to builtin sum()'''
-    return reduce(mul, container)
-
-
 # Helper methods for builtin data structures
 def iter_len(itera : Iterable):
     '''
@@ -72,7 +73,6 @@ def sort_dict_by_values(targ_dict : dict, reverse : bool=False) -> dict[Any, Any
             for key in sorted(targ_dict, key=lambda k : targ_dict[k], reverse=reverse)
     }
 
-
 # Date and time formatting
 DATETIME_FMT = '%m-%d-%Y_at_%H-%M-%S_%p' # formatted string which can be used in file names without error
 
@@ -87,8 +87,7 @@ def timestamp_now(fmt_str : str=DATETIME_FMT) -> str:
     '''
     return datetime.now().strftime(fmt_str)
 
-
-# Utilities for dealing with units
+# Unit handling
 class MissingUnitsError(Exception):
     pass
 
