@@ -10,3 +10,7 @@ TOOLKITS = {
 
 # import submodules
 from . import application, averaging, residues, types # must come last due to variables defined above
+
+# logging setup (will trickle through to submodules)
+import logging
+LOGGER = logging.getLogger(__name__)
