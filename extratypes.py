@@ -21,6 +21,7 @@ SubstructSummary = tuple[str, list[int], bool]  # RDKit graph-match-specific typ
 ## RDKit
 RDMol  = Chem.rdchem.Mol
 RDAtom = Chem.rdchem.Atom
+RDBond = Chem.rdchem.Bond
 
 ## Charge mapping and averaging - TODO : remove these, as they have been migrated over to .charging
 AtomIDMap = dict[str, dict[int, tuple[int, str]]]
