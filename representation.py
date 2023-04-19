@@ -2,12 +2,13 @@
 from . import general, filetree
 from .solvation.packmol import packmol_solvate_wrapper
 from .charging.averaging import write_lib_chgs_from_mono_data
-from .charging.application import MolCharger, load_matched_charged_molecule
+from .charging.application import load_matched_charged_molecule
 from .graphics.rdkdraw import compare_chgd_rdmols
 
 # Typing and Subclassing
+from .charging.application import MolCharger
 from .solvation.solvent import Solvent
-from .extratypes import SubstructSummary, Colormap, Figure, Axes, ndarray
+from .extratypes import SubstructSummary, Figure, Axes, ndarray
 from .charging.types import ResidueChargeMap
 
 from typing import Any, Callable, ClassVar, Iterable, Optional
@@ -370,15 +371,22 @@ class PolymerDir:
         self.register_charges(charge_method, charges) # doesn't need "update_checkpoint" flag, as all internal methods already do so
         self.assign_charges_by_lookup(charge_method)
 
+    def has_charges_for(self, charge_method : str) -> bool:
+        '''Return whether or not all requisite charge info (i.e. a list of charges and a charged .SDF) is present for the soecified charging method'''
+        return all(
+            charge_method in reg_dict # simple key-based check in charge set and charge file registries
+                for reg_dict in (self.charges, self.structure_files_chgd)
+        )
+    
     @update_checkpoint
     def charge_and_save_molecule(self, charger : MolCharger, *topo_args, **topo_kwargs) -> tuple[Molecule, Path]:
         '''Generates and registers 1) an .SDF file for the charged molecule and 2) an charge entry for just the Molecule's charges'''
         charge_method = charger.TAG
         unchgd_mol = self.offmol_matched(*topo_args, **topo_kwargs) # load a fresh, uncharged molecule from graph match (important to avoid charge contamination)
-        LOGGER.info(f'Generating pure charges for {self.mol_name} via the {charge_method} method')
+        LOGGER.info(f'Generating pure charges for "{self.mol_name}" via the "{charge_method}" method')
         chgd_mol = charger.charge_molecule(unchgd_mol)
         self.register_charges(charge_method, chgd_mol.partial_charges)
-        LOGGER.info(f'Successfully assigned charges via {charge_method}')
+        LOGGER.info(f'Successfully assigned charges via "{charge_method}"')
 
         sdf_path = self.SDF/f'{self.mol_name}_charged_{charge_method}.sdf'
         chgd_mol.properties['metadata'] = [atom.metadata for atom in chgd_mol.atoms] # need to store metadata as separate property, since SDF does not preserved metadata atomwise
@@ -393,6 +401,20 @@ class PolymerDir:
         Raises KeyError if the method requested is not registered'''
         return load_matched_charged_molecule(self.structure_files_chgd[charge_method], assume_ordered=True)
 
+    def assert_charges_for(self, charger : MolCharger, strict : bool=True, verbose : bool=False) -> Molecule:
+        '''Return charged molecule associated with a particular charger's method
+        If not already extant, will generate new charge sets and SDFs'''
+        chg_method = charger.TAG
+
+        if self.has_charges_for(chg_method): # if charges and charge Molecule SDFs already exist for the current method
+            LOGGER.info(f'Found existing partial charges for "{chg_method}"')
+            cmol = self.charged_offmol_from_sdf(chg_method)
+        else:
+            LOGGER.warning(f'Found no existing partial charges for "{chg_method}"')
+            cmol, sdf_path = self.charge_and_save_molecule(charger, strict=strict, verbose=verbose, chgd_monomers=False, topo_only=True) # ensure only uncharged monomers are used to avoid charge contamination
+
+        return cmol
+    
     def compare_charges(self, charge_method_1 : str, charge_method_2 : str, *args, **kwargs) -> tuple[Figure, Axes]:
         '''Plot a heat map showing the atomwise discrepancies in partial charges between any pair of registered charge sets'''
         chgd_rdmol1 = self.charged_offmol_from_sdf(charge_method_1).to_rdkit()
@@ -615,9 +637,11 @@ class PolymerDir:
         '''Empties all extant simulation folders - MAKE SURE YOU KNOW WHAT YOU'RE DOING HERE'''
         if not really:
             raise PermissionError('Please confirm that you really want to clear simulation directories (this can\'t be undone!)')
-        filetree.clear_dir(self.MD)
-        filetree.clear_dir(self.logs)
-        LOGGER.warning(f'Deleted all extant simulations for {self.mol_name}')
+        
+        if self.completed_sims: # only attempt removal and logging if simulations are actually present
+            filetree.clear_dir(self.MD)
+            filetree.clear_dir(self.logs)
+            LOGGER.warning(f'Deleted all extant simulations for {self.mol_name}')
 
     def interchange(self, charge_method : str):
         '''Create an Interchange object for a SMIRNOFF force field using internal structural files'''
@@ -738,6 +762,6 @@ class PolymerDirManager:
     def purge_sims(self, really : bool=False) -> None:
         if not really:
             raise PermissionError('Please confirm that you really want to clear all directories (this can\'t be undone!)')
+        
         for mol_dir in self.mol_dirs_list:
             mol_dir.purge_sims(really=really)
-        self.purge_logs(really=really)
