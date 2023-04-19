@@ -96,6 +96,9 @@ class PolymerDir:
         # "Private" attributes
         self._off_topology : Topology = None
         self._offmol       : Molecule = None
+        
+        self._off_topology_unmatched : Topology = None
+        self._offmol_unmatched       : Molecule = None
 
         # Filetree creation
         self.subdirs         : dict[str, Path] = {} # reference specific directories corresponding to the standard class-wide directories
@@ -307,9 +310,10 @@ class PolymerDir:
     def off_topology_matched(self, strict : bool=True, verbose : bool=False, chgd_monomers : bool=False, topo_only : bool=True) -> tuple[Topology, Optional[list[SubstructSummary]], Optional[bool]]:
         '''Performs a monomer substructure match and returns the resulting OpenFF Topology'''
         monomer_path = self.monomer_file_chgd if chgd_monomers else self.monomer_file
+        assert(self.structure_file.exists())
         assert(monomer_path.exists())
 
-        LOGGER.info('Loading OpenFF Topology with monomer graph match')
+        LOGGER.info('Loading OpenFF Topology WITH monomer graph match')
         off_topology, substructs, error_state = Topology.from_pdb_and_monomer_info(str(self.structure_file), monomer_path, strict=strict, verbose=verbose)
 
         if topo_only:
@@ -328,18 +332,42 @@ class PolymerDir:
     # Property wrappers for default cases - simplifies notation for common usage. Rematched versions are still exposed thru *_matched OFF methods
     @property
     def off_topology(self):
+        '''Cached version of graph-matched Topology to reduce load times'''
         if self._off_topology is None:
             self._off_topology = self.off_topology_matched() # cache topology match
             self.to_file() # not using "update_checkpoint" decorator here since attr write happens only once, and to avoid interaction with "property" 
         return self._off_topology
     
+    @property
+    def off_topology_unmatched(self):
+        '''Cached version of Topology which is explicitly NOT graph-matched (limited chemical info but compatible with vanilla OpenFF)'''
+        if self._off_topology_unmatched is None:
+            assert(self.structure_file.exists())
+            LOGGER.info('Loading OpenFF Topology WITHOUT monomer graph match')
+            
+            raw_offmol = Molecule.from_file(self.structure_file)
+            frags = Chem.rdmolops.GetMolFrags(raw_offmol.to_rdkit(), asMols=True) # fragment Molecule in the case that multiple true molecules are present
+            self._off_topology_unmatched = Topology.from_molecules(Molecule.from_rdkit(frag) for frag in frags)
+
+        return self._off_topology_unmatched 
+
     @property 
     def largest_offmol(self):
+        '''Cached version of primary Molecule (WITH graph match) to reduce load times'''
         if self._offmol is None:
             self._offmol = self.offmol_matched()
             self.to_file() # not using "update_checkpoint" decorator here since attr write happens only once, and to avoid interaction with "property" 
         return self._offmol
     offmol = largest_offmol # alias for simplicity
+    
+    @property 
+    def largest_offmol_unmatched(self):
+        '''Cached version of primary Molecule (WITHOUT graph match) to reduce load times'''
+        if self._offmol_unmatched is None:
+            self._offmol_unmatched = max(self.off_topology_unmatched.molecules, key=lambda mol : mol.n_atoms)
+            self.to_file() # not using "update_checkpoint" decorator here since attr write happens only once, and to avoid interaction with "property" 
+        return self._offmol_unmatched
+    offmol_unmatched = largest_offmol_unmatched # alias for simplicity
 
     @property
     def forcefield(self):
