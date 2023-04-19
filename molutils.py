@@ -1,16 +1,21 @@
 # Typing and Subclassing
 import copy # revise diff_mol generation to eschew this import
-from typing import Union
+from typing import Any, Callable, Union
 from abc import ABC, abstractmethod, abstractproperty
- 
+
+# Functional methods
+from functools import partial
+from polymer_utils.general import xor
+
 # Cheminformatics
+from openff.toolkit import Molecule
 from rdkit import Chem
 
 RDMol = Chem.rdchem.Mol
 RDAtom = Chem.rdchem.Atom
+RDBond = Chem.rdchem.Bond
 
-
-# Converting to and from various encodings - enables conversion of 3D conformers into 2D structure for representation
+# Converting to and from various molecule encodings - enables transformation of 3D conformers into 2D structures for representation
 class RDConverter(ABC):
     '''For converting an existing RDKit Molecule to and from a particular format to gain new properties'''
     @classmethod
@@ -44,7 +49,7 @@ class CXSMILESConverter(RDConverter):
     def convert(self, rdmol : RDMol) -> RDMol:
         return Chem.MolFromSmiles(Chem.MolToCXSmiles(rdmol), sanitize=False)
 
-class InChIConverter(RDConverter):
+class InChIConverter(RDConverter): # TOSELF : this does not preserve atom map num ordering (how to incorporate AuxInfo?)
     TAG = 'InChI'
     def convert(self, rdmol : RDMol) -> RDMol:
         return Chem.AddHs(Chem.MolFromInchi(Chem.MolToInchi(rdmol), removeHs=False, sanitize=False))
@@ -59,8 +64,7 @@ RDCONVERTER_REGISTRY = { # keep easily accessible record of all available conver
         for child in RDConverter.__subclasses__()
 }
 
-
-# Flattening and comparing RDkit Molecules
+# Flattening and comparison of RDkit Molecules
 def _copy_rd_props(from_rdobj : Union[RDAtom, RDMol], to_rdobj : Union[RDAtom, RDMol]) -> None:
     '''For copying properties between a pair of RDKit Atoms or Mols'''
     # NOTE : will avoid use of GetPropsAsDict() to avoid errors from ridiculously restrictive C++ typing
@@ -120,3 +124,31 @@ def difference_rdmol(rdmol_1 : Chem.rdchem.Mol, rdmol_2 : Chem.rdchem.Mol, prop 
     diff_mol.SetDoubleProp(f'Delta{prop}Max', max(all_deltas)) # label maximal property value for ease of reference
 
     return diff_mol
+
+# Fragmentation
+def inter_monomer_bond_indices(offmol : Molecule) -> list[int]:
+    '''Return the bonds which bridge two distinct monomer fragments (as labelled by graph match)'''
+    return [
+        offmol.to_rdkit().GetBondBetweenAtoms(bond.atom1_index, bond.atom2_index).GetIdx()
+            for bond in offmol.bonds
+                if bond.atom1.metadata['residue_number'] != bond.atom2.metadata['residue_number']
+    ]
+
+def oligomers_by_length(offmol : Molecule, frag_len : int=100) -> list[int]:
+    '''Return the bonds which are between consecutive groups of monomers which have fewer than frag_len atoms combined'''
+    inter_mono_bonds = inter_monomer_bond_indices(offmol)
+    num_cuts = len(offmol.bonds) // frag_len
+
+    return sorted((i for i in inter_mono_bonds), key=lambda x : x % frag_len)[:num_cuts]
+
+def bond_ids_by_cond(rdmol : RDMol, bond_cond : Callable[[RDBond, Any], bool]) -> tuple[int]:
+    '''Return IDs of all bonds which satisfy some binary condition'''
+    return (bond.GetIdx() for bond in rdmol.GetBonds() if bond_cond(bond))
+
+between_numbered_atoms = partial(bond_ids_by_cond, bond_cond=lambda bond : xor(bond.GetBeginAtom().GetAtomMapNum(), bond.GetEndAtom().GetAtomMapNum()))
+
+
+def fragment_by_bond_indices(rdmol : RDMol, bond_ids : list[int]) -> tuple[RDMol, ...]:
+    '''Accepts an RDKit Mol and indices of bonds and returns the mol fragments produced by breaking those bonds'''
+    rdmol_cut = Chem.FragmentOnBonds(rdmol, bond_ids)
+    return Chem.GetMolFrags(rdmol_cut, asMols=True)
