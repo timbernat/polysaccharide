@@ -35,10 +35,6 @@ def product(container : Iterable):
     '''Analogous to builtin sum()'''
     return reduce(mul, container)
 
-def xor(a : Any, b : Any) -> bool:
-    '''Boolean exclusive-or for two arbitrary variables (not a builtin for some reason)'''
-    return bool(a) != bool(b)
-
 # Data containers
 def _modify_dict(path_dict : dict[Any, Any], modifier_fn : Callable[[Any, Any], tuple[Any, bool]]) -> None:
     '''Recursively modifies all values in a dict in-place according to some function'''
