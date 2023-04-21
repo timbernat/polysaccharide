@@ -23,7 +23,7 @@ is_term_by_rdmol   = lambda rdmol : get_num_ports(rdmol) == 1
 
 def estimate_chain_len(monomer_structs : dict[str, str], DOP : int) -> int:
     '''Given a set of monomers and the desired degree of polymerization, estimate the length of the resulting chain
-    NOTE : As-implemented, only works for linear homopolymers'''
+    NOTE : As-implemented, only works for linear homopolymers and block copolymers with equal an distribution of monomers'''
     num_mono = len(monomer_structs)
 
     mono_term   = np.zeros(num_mono, dtype=bool) #  terminality of each monomer (i.e. whether or not it is a term group)
@@ -68,7 +68,7 @@ def mbmol_from_mono_smarts(SMARTS : str) -> tuple[Compound, list[int]]:
 
     return mb_compound, mb_port_ids
 
-def build_linear_polymer(monomer_structs : dict[str, str], DOP : int) -> Polymer:
+def build_linear_polymer(monomer_structs : dict[str, str], DOP : int, add_Hs : bool=True) -> Polymer:
     '''Accepts a dict of monomer residue names and SMARTS (as one might find in a monomer JSON)
     and a degree of polymerization (i.e. chain length in number of monomers)) and returns an mbuild Polymer object'''
     chain = Polymer() 
@@ -80,7 +80,7 @@ def build_linear_polymer(monomer_structs : dict[str, str], DOP : int) -> Polymer
         else:
             chain.add_monomer(compound=mb_monomer, indices=port_ids)
 
-    chain.build(DOP) # assemble chain to desired size
+    chain.build(DOP - 1, add_hydrogens=add_Hs) # "-1" is to account for the fact that in mbuild, "n" is the number of times to replicate a seed monomer (i.e. 1 greater than the actual number of monomers)
     for atom in chain.particles():
         atom.charge = 0.0 # initialize all atoms as being uncharged (gets risk of pesky blocks of warnings)
 
