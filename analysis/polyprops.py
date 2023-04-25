@@ -1,7 +1,40 @@
-'''Custom implementations of polymer property calculations - recommend using MDTraj or similar implementations first'''
+from typing import Any, Callable
+from dataclasses import dataclass, field
+
 import numpy as np
+from mdtraj import Trajectory
+
+from openmm.unit import Unit
+from openmm.unit import nanometer, dimensionless
 
 
+@dataclass
+class PolyProp:
+    '''For encapsulating polymer property calculation methods, labels, and plotting info'''
+    calc   : Callable
+    name   : str
+    abbr   : str
+    unit   : Unit
+    kwargs : dict = field(default_factory=dict)
+
+    @property
+    def label(self) -> str:
+        return f'{self.name} ({self.abbr}, {self.unit.get_symbol()})'
+
+    def compute(self, traj : Trajectory) -> Any:
+        '''Apply method to a trajectory'''
+        return self.calc(traj, **self.kwargs)
+    
+import mdtraj as mdt
+
+DEFAULT_PROPS = [ # the base properties of interest for the 2023 monomer spec study
+    PolyProp(calc=mdt.compute_rg                , name='Radius of Gyration'             , abbr='Rg'  , unit=nanometer),
+    PolyProp(calc=mdt.shrake_rupley             , name='Solvent Accessible Surface Area', abbr='SASA', unit=nanometer**2, kwargs={'mode' : 'residue'}),
+    PolyProp(calc=mdt.relative_shape_antisotropy, name='Relative Shape Anisotropy'      , abbr='K2'  , unit=dimensionless)    
+]
+
+
+# Custom implementations of polymer property calculations - recommend using MDTraj or similar implementations first
 def compute_gyration_tensor(coords : np.ndarray, use_eins=True) -> np.ndarray:
     '''Determines the gyration tensor of a set of atomic coordinates (and its diagonalization)
     Expects coordinates in an Nx3 array, with each column representing the x, y, and z coordinates, respectively'''
