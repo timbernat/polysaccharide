@@ -1,12 +1,16 @@
 # General
 from pathlib import Path
-import json
 import re
 import numpy as np
 
 # Typing and subclassing
 from dataclasses import dataclass, field
 from typing import Any, Optional, Union
+from .filetree import JSONSerializable, JSONifiable
+
+# Logging
+import logging
+LOGGER = logging.getLogger(__name__)
 
 # OpenForceField
 from openff.units import unit as offunit # need OpenFF version of unit for Interchange positions for some reason
@@ -26,7 +30,7 @@ from openmm.unit import atmosphere, kelvin, nanometer
 
 
 @dataclass
-class SimulationParameters:
+class SimulationParameters(JSONifiable):
     '''For recording the parameters used to run an OpenMM Simulation'''
     total_time  : Quantity
     num_samples : int
@@ -55,12 +59,12 @@ class SimulationParameters:
         '''An array of the time data points represented by the given sampling rate and sim time'''
         return (np.arange(0, self.num_steps, step=self.record_freq) + self.record_freq)* self.timestep # extra offset by recording frequency need to align indices (not 0-indexed)
 
-    
     # JSON serialization
-    def serialized_json_dict(self) -> dict[str, Any]:
+    @staticmethod
+    def serialize_json_dict(unser_jdict : dict[Any, Any]) -> dict[str, JSONSerializable]:
         '''Serialize unit-ful Quantity attrs in a way the JSON can digest'''
         ser_jdict = {}
-        for attr_name, attr_val in self.__dict__.items():
+        for attr_name, attr_val in unser_jdict.items():
             if not isinstance(attr_val, Quantity):
                 ser_jdict[attr_name] = attr_val # nominally, copy all non-Quantities directly
             else:
@@ -70,7 +74,7 @@ class SimulationParameters:
         return ser_jdict
     
     @staticmethod
-    def deserialized_json_dict(ser_jdict : dict[str, Any]) -> dict[str, Any]:
+    def unserialize_json_dict(ser_jdict : dict[str, JSONSerializable]) -> dict[Any, Any]:
         '''For unserializing unit-ful Quantities upon load from json file'''
         unser_jdict = {}
         for attr_name, attr_val in ser_jdict.items():
@@ -90,22 +94,43 @@ class SimulationParameters:
                 unser_jdict[attr_name] = attr_val
         
         return unser_jdict
+    
+@dataclass
+class SimulationPaths(JSONifiable):
+    '''Stores paths to various files associated with a completed MD simulation'''
+    sim_params : Path
+    trajectory : Path
+    state_data : Path = None
+    checkpoint : Path = None
+    
+    time_data    : Path = None
+    spatial_data : Path = None
 
-    # File I/O
-    def to_file(self, savepath : Path) -> None:
-        '''Store parameters in a JSON file on disc'''
-        assert(savepath.suffix == '.json')
-        
-        with savepath.open('w') as dumpfile:
-            json.dump(self.serialized_json_dict(), dumpfile, indent=4)
+    # JSON serialization
+    @staticmethod
+    def serialize_json_dict(unser_jdict : dict[Any, Any]) -> dict[str, JSONSerializable]:
+        '''Convert all Paths to strings'''
+        ser_jdict = {}
+        for key, value in unser_jdict.items():
+            if isinstance(value, Path):
+                ser_jdict[key] = str(value)
+            else:
+                ser_jdict[key] = value
 
-    @classmethod
-    def from_file(cls, loadpath : Path) -> 'SimulationParameters':
-        with loadpath.open('r') as loadfile:
-            params = json.load(loadfile, object_hook=cls.deserialized_json_dict)
+        return ser_jdict
+    
+    @staticmethod
+    def unserialize_json_dict(ser_jdict : dict[str, JSONSerializable]) -> dict[Any, Any]:
+        '''For de-serializing JSON-compatible data into a form that the __init__method can accept'''
+        unser_jdict = {}
+        for key, value in ser_jdict.items():
+            if value is not None:
+                unser_jdict[key] = Path(value)
+            else:
+                unser_jdict[key] = value
 
-        return cls(**params)
-
+        return unser_jdict
+    
 
 # Functions for creating Simulation (and related) objects
 def create_simulation(interchange : Interchange, integrator : Integrator, forces : Optional[list[Force]]=None) -> Simulation:
@@ -118,26 +143,38 @@ def create_simulation(interchange : Interchange, integrator : Integrator, forces
         for force in forces:
             openmm_sys.addForce(force)
 
+    LOGGER.info('Creating OpenMM Simulation from Interchange')
     simulation = Simulation(openmm_top, openmm_sys, integrator)
     simulation.context.setPositions(openmm_pos)
 
     return simulation
 
-def run_simulation(simulation : Simulation, output_folder : Path, output_name : str, sim_params : SimulationParameters) -> None:
-    '''
-    Takes a Simulation object, performs energy minimization, and runs simulation for specified number of time steps
-    Recording PBD frames and the specified property data to CSV at the specified frequency
-    All output file names have same prefix
-    '''
-    folder_name = str(output_folder) # for some reason OpenMM simulations don't like Path objects (only take strings)
+def run_simulation(simulation : Simulation, output_folder : Path, output_name : str, sim_params : SimulationParameters) -> Path:
+    '''Takes a Simulation object, performs energy minimization, and runs simulation for specified number of time steps
+    Recording PBD frames and the specified property data to CSV at the specified frequency'''
+    # creating paths to requisite output files
+    prefix = f'{output_name}{"_" if output_name else ""}'
+    sim_paths_out = output_folder / f'{prefix}sim_paths.json'
+    sim_paths = SimulationPaths(
+        sim_params=output_folder / f'{prefix}sim_parameters.json',
+        trajectory=output_folder / f'{prefix}traj.pdb',
+        state_data=output_folder / f'{prefix}state_data.csv',
+        checkpoint=output_folder / f'{prefix}checkpoint.chk',
+    )
+    sim_paths.to_file(sim_paths_out)
+    sim_params.to_file(sim_paths.sim_params) 
 
-    # for saving pdb frames and reporting state/energy data
-    pdb_rep = PDBReporter(f'{folder_name}/{output_name}_traj.pdb', sim_params.record_freq)  # save frames at the specified interval
-    state_rep = StateDataReporter(f'{folder_name}/{output_name}_state_data.csv', sim_params.record_freq, **sim_params.reported_state_data)
+    # for saving pdb frames and reporting state/energy data - NOTE : all file paths must be stringified for OpenMM
+    pdb_rep = PDBReporter(str(sim_paths.trajectory), sim_params.record_freq)  # save frames at the specified interval
+    state_rep = StateDataReporter(str(sim_paths.state_data), sim_params.record_freq, **sim_params.reported_state_data)
     for rep in (pdb_rep, state_rep):
         simulation.reporters.append(rep) # add any desired reporters to simulation for tracking
 
     # minimize and run simulation
     simulation.minimizeEnergy()
-    simulation.saveCheckpoint(f'{folder_name}/{output_name}_checkpoint.chk') # save initial minimal state to simplify reloading process
+    simulation.saveCheckpoint(str(sim_paths.checkpoint)) # save initial minimal state to simplify reloading process
+    LOGGER.info(f'Running {sim_params.total_time} OpenMM sim at {sim_params.temperature} and {sim_params.pressure} for {sim_params.num_steps} steps')
     simulation.step(sim_params.num_steps)
+
+    return sim_paths_out
+    
