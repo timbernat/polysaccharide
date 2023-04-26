@@ -54,7 +54,7 @@ class AlreadySolvatedError(Exception):
 
 # Polymer representation classes
 def create_subdir_properties(cls):
-    '''For dynamically adding all subdirectories as accessible property fields - cleans up namespace for PolymerDir'''
+    '''For dynamically adding all subdirectories as accessible property fields - cleans up namespace for Polymer'''
     for dir_name in cls._SUBDIRS:
         def make_prop(subdir_name : str):
             return property(fget=lambda self : self.subdirs[subdir_name])
@@ -63,7 +63,7 @@ def create_subdir_properties(cls):
     return cls
 
 @create_subdir_properties
-class PolymerDir:
+class Polymer:
     '''For representing standard directory structure and requisite information for polymer structures, force fields, and simulations'''
     _SUBDIRS : ClassVar[tuple[str, ...]] = ( # directories with these names will be present in all polymer directories by standard
         'structures',
@@ -108,7 +108,7 @@ class PolymerDir:
         # Filetree creation
         self.subdirs         : dict[str, Path] = {} # reference specific directories corresponding to the standard class-wide directories
         self.subdirs_reverse : dict[str, Path] = {} # also create reverse lookup for getting attributes for parent directory paths
-        for dirname in PolymerDir._SUBDIRS:
+        for dirname in Polymer._SUBDIRS:
             subdir = self.path/dirname
             self.subdirs[dirname] = subdir
             self.subdirs_reverse[subdir] = dirname
@@ -135,7 +135,7 @@ class PolymerDir:
         )
         attr_str = ', '.join(f'{attr}={getattr(self, attr)}' for attr in disp_attrs)
 
-        return f'PolymerDir({attr_str})'
+        return f'Polymer({attr_str})'
     
     def empty(self) -> None:
         '''Undoes build_tree - intended to "reset" a directory - NOTE : will break most functionality if build_tree() is not subsequently called'''
@@ -143,8 +143,8 @@ class PolymerDir:
         LOGGER.warning(f'Cleared all contents of {self.mol_name}')
 
 # ATTRIBUTE TRANSFER AND CLONING
-    def transfer_file_attr(self, attr_name : str, other : 'PolymerDir') -> None:
-        '''Copy a file at a particular attribute, modify its path, and set the appropriate attribute in the receiving PolymerDir'''
+    def transfer_file_attr(self, attr_name : str, other : 'Polymer') -> None:
+        '''Copy a file at a particular attribute, modify its path, and set the appropriate attribute in the receiving Polymer'''
         file_path = getattr(self, attr_name)
         assert(isinstance(file_path, Path))
 
@@ -159,8 +159,8 @@ class PolymerDir:
         setattr(other, attr_name, new_file_path)
         LOGGER.info(f'Transferred file ref at {self.mol_name}.{attr_name} to {new_file_path}')
 
-    def transfer_attr(self, attr_name : str, other : 'PolymerDir') -> None:
-        '''Copy an attributes value to another PolymerDir instance'''
+    def transfer_attr(self, attr_name : str, other : 'Polymer') -> None:
+        '''Copy an attributes value to another Polymer instance'''
         attr = getattr(self, attr_name)
         if isinstance(attr, Path):
             self.transfer_file_attr(attr_name, other)
@@ -169,11 +169,11 @@ class PolymerDir:
             LOGGER.info(f'Copied attribute {attr_name} from {self.mol_name} to {other.mol_name}')
 
     def clone(self, dest_dir : Optional[Path]=None, clone_name : Optional[str]=None, exclusion : Optional[float]=None, clone_solvent : bool=True,
-              clone_structures : bool=False, clone_monomers : bool=True, clone_ff : bool=True, clone_charges : bool=False, clone_sims : bool=False) -> 'PolymerDir':
+              clone_structures : bool=False, clone_monomers : bool=True, clone_ff : bool=True, clone_charges : bool=False, clone_sims : bool=False) -> 'Polymer':
         '''
-        Create a copy of a PolymerDir in a specified directory with a new name, updating file references accordingly
+        Create a copy of a Polymer in a specified directory with a new name, updating file references accordingly
         If neither a new Path nor name are specified, will default to cloning in the same parent directory with "_clone" affixed to self's name
-        Will raise PermissionError if attempting to clone over the original PolymerDir
+        Will raise PermissionError if attempting to clone over the original Polymer
         '''
         # checking for defaults
         if dest_dir is None:
@@ -186,11 +186,11 @@ class PolymerDir:
             exclusion = self.exclusion
         
         if (dest_dir == self.parent_dir) and (clone_name == self.mol_name):
-            raise PermissionError(f'Cannot clone PolymerDir at {self.path} over itself')
+            raise PermissionError(f'Cannot clone Polymer at {self.path} over itself')
 
         # creating the clone
         LOGGER.info(f'Creating clone of {self.mol_name}')
-        clone = PolymerDir(parent_dir=dest_dir, mol_name=clone_name, exclusion=exclusion)
+        clone = Polymer(parent_dir=dest_dir, mol_name=clone_name, exclusion=exclusion)
         clone.base_mol_name = self.mol_name # keep record of identity of original molecule
 
         if clone_solvent:
@@ -226,17 +226,17 @@ class PolymerDir:
             pickle.dump(self, checkpoint_file)
 
     @classmethod
-    def from_file(cls, checkpoint_path : Path) -> 'PolymerDir':
+    def from_file(cls, checkpoint_path : Path) -> 'Polymer':
         '''Load a saved directory tree object from disc'''
         assert(checkpoint_path.suffix == '.pkl')
 
-        LOGGER.debug(f'Loading PolymerDir from {checkpoint_path}')
+        LOGGER.debug(f'Loading Polymer from {checkpoint_path}')
         with checkpoint_path.open('rb') as checkpoint_file:
             return pickle.load(checkpoint_file)
         
     @staticmethod
     def update_checkpoint(funct : Callable) -> Callable[[Any], Optional[Any]]: # NOTE : this deliberately doesn't have a "self" arg!
-        '''Decorator for updating the on-disc checkpoint file after a function updates a PolymerDir attribute'''
+        '''Decorator for updating the on-disc checkpoint file after a function updates a Polymer attribute'''
         def update_fn(self, *args, **kwargs) -> Optional[Any]:
             ret_val = funct(self, *args, **kwargs) # need temporary value so update call can be made before returning
             self.to_file()
@@ -487,8 +487,8 @@ class PolymerDir:
 
     def populate_mol_files(self, struct_dir : Path, monomer_dir : Path=None) -> None:
         '''
-        Populates a PolymerDir with the relevant structural and monomer files from a shared source ("data dump") folder
-        Assumes that all structure and monomer files will have the same name as the PolymerDir in question
+        Populates a Polymer with the relevant structural and monomer files from a shared source ("data dump") folder
+        Assumes that all structure and monomer files will have the same name as the Polymer in question
         '''
         self.populate_pdb(struct_dir, assert_exists=True)
         
@@ -510,7 +510,7 @@ class PolymerDir:
         chgd_mono_path = self.monomer_file.with_name(f'{self.mol_name}_charged.json')
         with chgd_mono_path.open('w') as chgd_json:
             json.dump(chgd_monomer_data, chgd_json, indent=4)
-        LOGGER.info(f'Created new monomer file for {self.mol_name} with monomer-averaged charge entries')
+        LOGGER.info(f'Created new monomer file for "{self.mol_name}" with monomer-averaged charge entries')
 
         self.monomer_file_chgd = chgd_mono_path # record path to new json file
 
@@ -537,8 +537,8 @@ class PolymerDir:
 
 # SOLVATION
     # doesn't need "update_checkpoint" decorator, as no own attrs are being updated
-    def solvate(self, solvent : Solvent, template_path : Path, dest_dir : Path=None, exclusion : float=None, precision : int=4) -> 'PolymerDir':
-        '''Create a clone of a PolymerDir and solvate it in a box defined by the polymer's bounding box + an exclusion buffer'''
+    def solvate(self, solvent : Solvent, template_path : Path, dest_dir : Path=None, exclusion : float=None, precision : int=4) -> 'Polymer':
+        '''Create a clone of a Polymer and solvate it in a box defined by the polymer's bounding box + an exclusion buffer'''
         if not self.has_structure_data:
             raise MissingStructureData
         
@@ -588,8 +588,8 @@ class PolymerDir:
         return solva_dir
 
     @update_checkpoint
-    def solvate_legacy(self, solvent : Solvent, template_path : Path, exclusion : float=None, precision : int=4) ->  'PolymerDir':
-        '''Applies packmol solvation routine to an extant PolymerDir
+    def solvate_legacy(self, solvent : Solvent, template_path : Path, exclusion : float=None, precision : int=4) ->  'Polymer':
+        '''Applies packmol solvation routine to an extant Polymer
         This is the original implementation of solvation, kept for debug reasons'''
         if not self.has_structure_data:
             raise MissingStructureData
@@ -601,7 +601,7 @@ class PolymerDir:
             exclusion = self.exclusion # default to same exclusion as parent
 
         solvated_name = f'{self.mol_name}_solv_{solvent.name}'
-        solva_dir = PolymerDir(parent_dir=self.parent_dir, mol_name=solvated_name)
+        solva_dir = Polymer(parent_dir=self.parent_dir, mol_name=solvated_name)
         solva_dir.base_mol_name = self.mol_name # TOSELF : temporary, ensure that a solvated mol is stil keyable by the original molecule name
 
         solva_dir.exclusion = exclusion
@@ -669,7 +669,7 @@ class PolymerDir:
     def interchange(self, charge_method : str):
         '''Create an Interchange object for a SMIRNOFF force field using internal structural files'''
         off_topology = self.off_topology_matched() # self.off_topology
-        off_topology.box_vectors = self.box_vectors.in_units_of(nanometer) # set box vector to allow for periodic simulation (will be non-periodic if mol_dir box vectors are unset i.e. NoneType)
+        off_topology.box_vectors = self.box_vectors.in_units_of(nanometer) # set box vector to allow for periodic simulation (will be non-periodic if polymer box vectors are unset i.e. NoneType)
 
         self.assign_charges_by_lookup(charge_method) # assign relevant charges prior to returning molecule
         cmol = self.offmol 
@@ -701,40 +701,40 @@ class PolymerDir:
             self.simulation_paths.clear()
             LOGGER.warning(f'Deleted all extant simulations for {self.mol_name}')
 
-class PolymerDirManager:
-    '''Class for organizing, loading, and manipulating collections of PolymerDir objects'''
+class PolymerManager:
+    '''Class for organizing, loading, and manipulating collections of Polymer objects'''
     def __init__(self, collection_dir : Path):
         self.collection_dir : Path = collection_dir
         self.log_dir        : Path = self.collection_dir/'Logs'
-        self.mol_dirs_list  : list[PolymerDir] = []
+        self.polymers_list  : list[Polymer] = []
 
         self.collection_dir.mkdir(exist_ok=True)
         self.log_dir.mkdir(exist_ok=True)
         
         self.update_collection() # populate currently extant dirs
 
-# READING EXISTING PolymerDirs
+# READING EXISTING Polymers
     def update_collection(self, return_missing : bool=False) -> Optional[list[Path]]:
         '''
         Load existing polymer directories from target directory into memory
         Return a list of the checkpoint patfhs which contain faulty/no data
         '''
-        LOGGER.debug(f'Refreshing available PolymerDirs available in PolymerManager at {self.collection_dir}')
-        found_mol_dirs, missing_chk_data = [], []
+        LOGGER.debug(f'Refreshing available Polymers available in PolymerManager at {self.collection_dir}')
+        found_polymers, missing_chk_data = [], []
         for checkpoint_file in self.collection_dir.glob('**/*_checkpoint.pkl'):
             try:
-                found_mol_dirs.append(PolymerDir.from_file(checkpoint_file))
+                found_polymers.append(Polymer.from_file(checkpoint_file))
             except EOFError:
                 missing_chk_data.append(checkpoint_file)
-                # print(f'Missing checkpoint file info in {mol_dir}') # TODO : find better way to log this
-        self.mol_dirs_list = found_mol_dirs # avoiding direct append ensures no double-counting if run multiple times (starts with empty list each time)
+                # print(f'Missing checkpoint file info in {polymer}') # TODO : find better way to log this
+        self.polymers_list = found_polymers # avoiding direct append ensures no double-counting if run multiple times (starts with empty list each time)
 
         if return_missing:
             return missing_chk_data
         
     @staticmethod
     def refresh_listed_dirs(funct : Callable) -> Callable[[Any], Optional[Any]]: # NOTE : this deliberately doesn't have a "self" arg!
-        '''Decorator for updating the internal list of PolymerDirs after a function'''
+        '''Decorator for updating the internal list of Polymers after a function'''
         def update_fn(self, *args, **kwargs) -> Optional[Any]:
             ret_val = funct(self, *args, **kwargs) # need temporary value so update call can be made before returning
             self.update_collection(return_missing=False)
@@ -744,54 +744,54 @@ class PolymerDirManager:
 # PROPERTIES
     @property
     def n_mols(self) -> int:
-        '''Number of PolymerDirs currently being tracked'''
-        return len(self.mol_dirs_list)
+        '''Number of Polymers currently being tracked'''
+        return len(self.polymers_list)
 
     @property
-    def mol_dirs_list_by_size(self) -> list[PolymerDir]:
+    def polymers_list_by_size(self) -> list[Polymer]:
         '''Return all polymer directories in collection, ordered by molecule size'''
-        return sorted(self.mol_dirs_list, key=lambda mdir : mdir.n_atoms)
+        return sorted(self.polymers_list, key=lambda mdir : mdir.n_atoms)
 
     @property
-    def mol_dirs(self) -> dict[str, PolymerDir]:
-        '''Currently extant PolymerDirs, keyed by their molecule name (convenient for applications where frequent name lookup/str manipulation is required)'''
-        return {mol_dir.mol_name : mol_dir for mol_dir in self.mol_dirs_list} # NOTE : formulated as a property in order to generate unique copies of the dict when associating to another variable (prevents shared overwrites)
+    def polymers(self) -> dict[str, Polymer]:
+        '''Currently extant Polymers, keyed by their molecule name (convenient for applications where frequent name lookup/str manipulation is required)'''
+        return {polymer.mol_name : polymer for polymer in self.polymers_list} # NOTE : formulated as a property in order to generate unique copies of the dict when associating to another variable (prevents shared overwrites)
     
     @property
     def all_completed_sims(self) -> dict[str, list[Path]]: 
         '''Get a dict of currently populated simulation folders itermized by molecule name'''
         return {
-            mol_name : mol_dir.completed_sims
-                for mol_name, mol_dir in self.mol_dirs.items()
-                    if mol_dir.completed_sims # don't report directories without simulations
+            mol_name : polymer.completed_sims
+                for mol_name, polymer in self.polymers.items()
+                    if polymer.completed_sims # don't report directories without simulations
         }
 
-# FILE AND Polymerdir GENERATION
+# FILE AND Polymer GENERATION
     @refresh_listed_dirs
     def populate_collection(self, struct_dir : Path, monomer_dir : Path=None) -> None:
-        '''Generate PolymerDirs via files extracted from a lumped PDB/JSON directory'''
+        '''Generate Polymers via files extracted from a lumped PDB/JSON directory'''
         for pdb_path in struct_dir.glob('**/*.pdb'):
             mol_name = pdb_path.stem
             parent_dir = self.collection_dir/mol_name
             parent_dir.mkdir(exist_ok=True)
 
-            mol_dir = PolymerDir(parent_dir, mol_name)
-            mol_dir.populate_mol_files(struct_dir=struct_dir, monomer_dir=monomer_dir)
+            polymer = Polymer(parent_dir, mol_name)
+            polymer.populate_mol_files(struct_dir=struct_dir, monomer_dir=monomer_dir)
 
     @refresh_listed_dirs
     def solvate_collection(self, solvents : Iterable[Solvent], template_path : Path, exclusion : float=None) -> None:
-        '''Make solvated versions of all listed PolymerDirs, according to a collection of solvents'''      
+        '''Make solvated versions of all listed Polymers, according to a collection of solvents'''      
         for solvent in solvents:
             if solvent is None: # handle the case where a null solvent is passed (technically a valid Solvent for typing reasons)
                 continue
 
-            for mol_dir in self.mol_dirs_list:
-                if (mol_dir.solvent is None): # don't double-solvate any already-solvated systems
-                    solv_dir = mol_dir.solvate(solvent=solvent, template_path=template_path, exclusion=exclusion)
-                    self.mol_dirs_list.append(solv_dir) # ultimately pointless, as this will be cleared and reloaded upon refresh. Still, nice to be complete :)
+            for polymer in self.polymers_list:
+                if (polymer.solvent is None): # don't double-solvate any already-solvated systems
+                    solv_dir = polymer.solvate(solvent=solvent, template_path=template_path, exclusion=exclusion)
+                    self.polymers_list.append(solv_dir) # ultimately pointless, as this will be cleared and reloaded upon refresh. Still, nice to be complete :)
 
 # PURGING (DELETION) METHODS
-    def purge_logs(self, really : bool=False) -> None: # NOTE : deliberately undecorated, as no PolymerDir reload is required
+    def purge_logs(self, really : bool=False) -> None: # NOTE : deliberately undecorated, as no Polymer reload is required
         if not really:
             raise PermissionError('Please confirm that you really want to clear all directories (this can\'t be undone!)')
         filetree.clear_dir(self.log_dir)
@@ -806,7 +806,7 @@ class PolymerDirManager:
             if subdir != self.log_dir:
                 filetree.clear_dir(subdir)
                 subdir.rmdir() # clean up now-emptied subdirectories
-        LOGGER.warning(f'Deleted all PolymerDirs found in {self.collection_dir}')
+        LOGGER.warning(f'Deleted all Polymers found in {self.collection_dir}')
         
         if purge_logs:
             self.purge_logs(really=really)
@@ -816,5 +816,5 @@ class PolymerDirManager:
         if not really:
             raise PermissionError('Please confirm that you really want to clear all directories (this can\'t be undone!)')
         
-        for mol_dir in self.mol_dirs_list:
-            mol_dir.purge_sims(really=really)
+        for polymer in self.polymers_list:
+            polymer.purge_sims(really=really)
