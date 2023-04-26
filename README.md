@@ -1,4 +1,4 @@
-# polymer_utils
+# polysaccharide
 POLYSACCHARIDE : **P**olymer-**O**riented **L**ibrary **Y**ielding **S**tructure **A**ssignment, **C**alculation of **CHAR**ges, **I**nterchange,
 and **D**ata **E**lucidation 
 
