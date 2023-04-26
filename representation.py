@@ -3,6 +3,7 @@ from . import general, filetree
 from .solvation.packmol import packmol_solvate_wrapper
 from .charging.averaging import write_lib_chgs_from_mono_data
 from .charging.application import load_matched_charged_molecule
+from . import simulation
 from .graphics.rdkdraw import compare_chgd_rdmols
 
 # Typing and Subclassing
@@ -27,13 +28,15 @@ LOGGER = logging.getLogger(__name__)
 from rdkit import Chem
 from rdkit.Chem.rdchem import Mol as RDMol
 
+# Molecular Dynamics
 from openff.toolkit import ForceField
 from openff.interchange import Interchange
 from openff.toolkit.topology import Topology, Molecule
 from openff.toolkit.typing.engines.smirnoff.parameters import LibraryChargeHandler
 
+from openmm.openmm import MonteCarloBarostat
+from openmm import LangevinMiddleIntegrator
 from openmm.unit import angstrom, nanometer
-
 
 # Custom Exceptions
 class MissingStructureData(Exception):
@@ -47,6 +50,7 @@ class MissingChargedMonomerData(Exception):
 
 class AlreadySolvatedError(Exception):
     pass
+
 
 # Polymer representation classes
 def create_subdir_properties(cls):
@@ -87,11 +91,12 @@ class PolymerDir:
         self.charges : dict[str, ndarray[float]] = {}
         self.charge_method : str = None
         
-        self.ff_file              : Optional[Path] = None # .OFFXML
-        self.monomer_file         : Optional[Path] = None # .JSON
-        self.monomer_file_chgd    : Optional[Path] = None # .JSON
-        self.structure_file       : Optional[Path] = None # .PDB
-        self.structure_files_chgd : Optional[dict[str, Path]] = {} # dict of .SDF
+        self.ff_file              : Optional[Path]   = None # .OFFXML
+        self.monomer_file         : Optional[Path]   = None # .JSON
+        self.monomer_file_chgd    : Optional[Path]   = None # .JSON
+        self.structure_file       : Optional[Path]   = None # .PDB
+        self.structure_files_chgd : dict[str, Path]  = {} # dict of .SDF
+        self.simulation_paths     : dict[Path, Path] = {}
 
         # "Private" attributes
         self._off_topology : Topology = None
@@ -409,12 +414,12 @@ class PolymerDir:
     @update_checkpoint
     def charge_and_save_molecule(self, charger : MolCharger, *topo_args, **topo_kwargs) -> tuple[Molecule, Path]:
         '''Generates and registers 1) an .SDF file for the charged molecule and 2) an charge entry for just the Molecule's charges'''
-        charge_method = charger.TAG
+        charge_method = charger.METHOD_NAME
+
         unchgd_mol = self.offmol_matched(*topo_args, **topo_kwargs) # load a fresh, uncharged molecule from graph match (important to avoid charge contamination)
-        LOGGER.info(f'Generating pure charges for "{self.mol_name}" via the "{charge_method}" method')
         chgd_mol = charger.charge_molecule(unchgd_mol)
         self.register_charges(charge_method, chgd_mol.partial_charges)
-        LOGGER.info(f'Successfully assigned charges via "{charge_method}"')
+        LOGGER.info(f'Registered "{charge_method}" charges to "{self.mol_name}"')
 
         sdf_path = self.SDF/f'{self.mol_name}_charged_{charge_method}.sdf'
         chgd_mol.properties['metadata'] = [atom.metadata for atom in chgd_mol.atoms] # need to store metadata as separate property, since SDF does not preserved metadata atomwise
@@ -432,13 +437,13 @@ class PolymerDir:
     def assert_charges_for(self, charger : MolCharger, strict : bool=True, verbose : bool=False) -> Molecule:
         '''Return charged molecule associated with a particular charger's method
         If not already extant, will generate new charge sets and SDFs'''
-        chg_method = charger.TAG
+        charge_method = charger.METHOD_NAME
 
-        if self.has_charges_for(chg_method): # if charges and charge Molecule SDFs already exist for the current method
-            LOGGER.info(f'Found existing partial charges for "{chg_method}"')
-            cmol = self.charged_offmol_from_sdf(chg_method)
+        if self.has_charges_for(charge_method): # if charges and charge Molecule SDFs already exist for the current method
+            LOGGER.info(f'Found existing "{charge_method}" partial charges for {self.mol_name}')
+            cmol = self.charged_offmol_from_sdf(charge_method)
         else:
-            LOGGER.warning(f'Found no existing partial charges for "{chg_method}"')
+            LOGGER.warning(f'Found no existing "{charge_method}" partial charges for {self.mol_name}')
             cmol, sdf_path = self.charge_and_save_molecule(charger, strict=strict, verbose=verbose, chgd_monomers=False, topo_only=True) # ensure only uncharged monomers are used to avoid charge contamination
 
         return cmol
@@ -524,7 +529,7 @@ class PolymerDir:
             LOGGER.info(f'Detected solvent "{self.solvent.name}", merged solvent and molecule force field')
 
         self.ff_file = ff_path # ensure change is reflected in directory info
-        LOGGER.info('Generated new Force Field XML with Library Charges')
+        LOGGER.info(f'Successfully generated forcefield file for "{self.mol_name}"')
 
         if return_lib_chgs:
             return forcefield, lib_chgs
@@ -654,23 +659,13 @@ class PolymerDir:
 
     def make_sim_dir(self, affix : Optional[str]='') -> Path:
         '''Create a new timestamped simulation results directory'''
-        res_name = f'{affix}{"_" if affix else ""}{general.timestamp_now()}'
-        res_dir = self.MD/res_name
-        res_dir.mkdir(exist_ok=False) # will raise FileExistsError in case of overlap
-        LOGGER.debug('Created new simulation directory')
+        sim_name = f'{affix}{"_" if affix else ""}{general.timestamp_now()}'
+        sim_dir = self.MD/sim_name
+        sim_dir.mkdir(exist_ok=False) # will raise FileExistsError in case of overlap
+        LOGGER.info(f'Created new Simulation directory "{sim_name}"')
 
-        return res_dir
+        return sim_dir
     
-    def purge_sims(self, really : bool=False) -> None:
-        '''Empties all extant simulation folders - MAKE SURE YOU KNOW WHAT YOU'RE DOING HERE'''
-        if not really:
-            raise PermissionError('Please confirm that you really want to clear simulation directories (this can\'t be undone!)')
-        
-        if self.completed_sims: # only attempt removal and logging if simulations are actually present
-            filetree.clear_dir(self.MD)
-            filetree.clear_dir(self.logs)
-            LOGGER.warning(f'Deleted all extant simulations for {self.mol_name}')
-
     def interchange(self, charge_method : str):
         '''Create an Interchange object for a SMIRNOFF force field using internal structural files'''
         off_topology = self.off_topology_matched() # self.off_topology
@@ -679,9 +674,32 @@ class PolymerDir:
         self.assign_charges_by_lookup(charge_method) # assign relevant charges prior to returning molecule
         cmol = self.offmol 
   
-        LOGGER.info('Creating Simulation from Interchange')
+        LOGGER.info(f'Creating SMIRNOFF Interchange for "{self.mol_name}"')
         return Interchange.from_smirnoff(force_field=self.forcefield, topology=off_topology, charge_from_molecules=[cmol]) # package FF, topoplogy, and molecule charges together and ship out
+        
+    def run_simulation_NPT(self, sim_params : simulation.SimulationParameters) -> Path:
+        '''Initialize and run an OpenMM simulation in the Isothermal-Isobaric ensemble with a predefined set of setup parameters'''
+        sim_folder = self.make_sim_dir()
 
+        interchange = self.interchange(sim_params.charge_method)
+        integrator  = LangevinMiddleIntegrator(sim_params.temperature, sim_params.friction_coeff, sim_params.timestep)
+        barostat    = MonteCarloBarostat(sim_params.pressure, sim_params.temperature, sim_params.barostat_freq)
+        sim = simulation.create_simulation(interchange, integrator, forces=[barostat])
+
+        self.simulation_paths[sim_folder] = simulation.run_simulation(sim, output_folder=sim_folder, output_name=self.mol_name, sim_params=sim_params) # run simulation and record paths to output files
+
+        return sim_folder
+
+    def purge_sims(self, really : bool=False) -> None:
+        '''Empties all extant simulation folders - MAKE SURE YOU KNOW WHAT YOU'RE DOING HERE'''
+        if not really:
+            raise PermissionError('Please confirm that you really want to clear simulation directories (this can\'t be undone!)')
+        
+        if self.completed_sims: # only attempt removal and logging if simulations are actually present
+            filetree.clear_dir(self.MD)
+            filetree.clear_dir(self.logs)
+            self.simulation_paths.clear()
+            LOGGER.warning(f'Deleted all extant simulations for {self.mol_name}')
 
 class PolymerDirManager:
     '''Class for organizing, loading, and manipulating collections of PolymerDir objects'''
@@ -725,12 +743,19 @@ class PolymerDirManager:
     
 # PROPERTIES
     @property
+    def n_mols(self) -> int:
+        '''Number of PolymerDirs currently being tracked'''
+        return len(self.mol_dirs_list)
+
+    @property
+    def mol_dirs_list_by_size(self) -> list[PolymerDir]:
+        '''Return all polymer directories in collection, ordered by molecule size'''
+        return sorted(self.mol_dirs_list, key=lambda mdir : mdir.n_atoms)
+
+    @property
     def mol_dirs(self) -> dict[str, PolymerDir]:
-        '''
-        Key present PolymerDirs by their molecule name (convenient for applications where frequent name lookup/str manipulation is required)
-        Written as a property in order to generate unique copies of the dict when associating to another variable (prevents shared overwrites)
-        '''
-        return {mol_dir.mol_name : mol_dir for mol_dir in self.mol_dirs_list}
+        '''Currently extant PolymerDirs, keyed by their molecule name (convenient for applications where frequent name lookup/str manipulation is required)'''
+        return {mol_dir.mol_name : mol_dir for mol_dir in self.mol_dirs_list} # NOTE : formulated as a property in order to generate unique copies of the dict when associating to another variable (prevents shared overwrites)
     
     @property
     def all_completed_sims(self) -> dict[str, list[Path]]: 
