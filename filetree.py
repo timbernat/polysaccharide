@@ -1,10 +1,10 @@
 import json
 from pathlib import Path
-
-from typing import Any, Callable, Optional
 import subprocess
 
-from .extratypes import JSONSerializable
+from typing import Any, Union
+from abc import ABC, abstractstaticmethod
+
 from .general import iter_len
 
 
@@ -49,6 +49,8 @@ def local_rename_ext(path : Path, new_stem : str) -> Path:
     return path.rename(path.with_stem(new_stem))
 
 # JSON-specific functionality
+JSONSerializable = Union[str, bool, int, float, tuple, list, dict] 
+
 def append_to_json(json_path : Path, **kwargs) -> None:
     '''Add an entry to an existing JSON file'''
     with json_path.open('r') as json_file:
@@ -100,3 +102,32 @@ class JSONDict(dict):
     def __delitem__(self, __key: str) -> None:
         super().__delitem__(__key)
         self._update_file()
+
+class JSONifiable(ABC):
+    '''Base class which allows a child class to have its attributes written to and from a JSON file on disc between interpreter sessions
+    Children must implement how dict data (i.e. self.__dict__) is encoded to and decoded from JSON formatted dict'''
+
+    # JSON encoding and decoding
+    @abstractstaticmethod
+    def serialize_json_dict(unser_dict : dict[Any, Any]) -> dict[str, JSONSerializable]:
+        '''For converting selfs __dict__ data into a form that can be serialized to JSON'''
+        pass
+    
+    @abstractstaticmethod
+    def unserialize_json_dict(ser_jdict : dict[str, JSONSerializable]) -> dict[Any, Any]:
+        '''For de-serializing JSON-compatible data into a form that the __init__method can accept'''
+        pass
+
+    # File I/O
+    def to_file(self, savepath : Path) -> None:
+        '''Store parameters in a JSON file on disc'''
+        assert(savepath.suffix == '.json')
+        with savepath.open('w') as dumpfile:
+            json.dump(self.__class__.serialize_json_dict(self.__dict__), dumpfile, indent=4)
+
+    @classmethod
+    def from_file(cls, loadpath : Path) -> 'JSONifiable':
+        with loadpath.open('r') as loadfile:
+            params = json.load(loadfile, object_hook=cls.unserialize_json_dict)
+
+        return cls(**params)
