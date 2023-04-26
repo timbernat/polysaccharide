@@ -1,4 +1,4 @@
-from polymer_utils.graphics.plotutils import presize_subplots
+from ..graphics.plotutils import presize_subplots
 
 import numpy as np
 import pandas as pd

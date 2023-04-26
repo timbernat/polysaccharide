@@ -1,5 +1,5 @@
 # TOSELF : might be nice to find a way to may this relative for transferability (standard "." notation gives ImportError: attempted relative import beyond top-level package)
-from polymer_utils.solvation.solvent import Solvent 
+from polysaccharide.solvation.solvent import Solvent 
 from openmm.unit import gram, centimeter, mole
 from pathlib import Path
 

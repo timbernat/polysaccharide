@@ -1,6 +1,6 @@
 # Custom Imports
-from polymer_utils.general import strip_units
-from polymer_utils.extratypes import ArrayLike
+from ..general import strip_units
+from ..extratypes import ArrayLike
 
 # File I/O
 from pathlib import Path

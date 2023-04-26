@@ -1,6 +1,6 @@
 # Custom imports
 from .polyprops import PolyProp
-from polymer_utils.general import hasunits, MissingUnitsError
+from ..general import hasunits, MissingUnitsError
 
 # General imports
 from itertools import combinations

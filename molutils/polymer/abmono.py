@@ -5,7 +5,7 @@ import re
 import numpy as np
 
 # Typing and subclassing
-from polymer_utils.molutils.rdmol.rdtypes import *
+from ..rdmol.rdtypes import *
 SmartsByResidue = dict[str, str] # monomer SMARTS strings keyed by residue name
 
 # Custom Exceptions for more tailored error messages
