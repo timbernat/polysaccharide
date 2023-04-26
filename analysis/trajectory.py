@@ -1,5 +1,5 @@
 # Custom imports
-from .properties import PolyProp
+from .polyprops import PolyProp
 from polymer_utils.general import hasunits, MissingUnitsError
 
 # General imports
@@ -59,6 +59,9 @@ def acquire_time_props(traj : mdt.Trajectory, properties : list[PolyProp], time_
 
     for prop in properties:
         time_series = prop.compute(traj) 
+        if (time_series.ndim > 1):
+            time_series = time_series.sum(axis=-1) # sum over atoms / residue if multiple series are given (particular to SASA calculation)
+
         out_dframe[prop.label] = time_series * prop.unit
 
     return out_dframe
