@@ -1,16 +1,25 @@
+# General imports
 import numpy as np
-from copy import copy
 from ast import literal_eval
 
+# File I/O
+from copy import copy
 from pathlib import Path
+
+# logging setup - will feed up to charging module parent logger
+import logging
+LOGGER = logging.getLogger(__name__)
+
+# Typing and subclassing
 from typing import Optional
 from abc import ABC, abstractmethod, abstractproperty
+
+from . import TOOLKITS
+from .types import ResidueChargeMap
 
 from openmm.unit import elementary_charge
 from openff.toolkit.topology.molecule import Molecule
 
-from . import TOOLKITS
-from .types import ResidueChargeMap
 
 
 # FUNCTIONS
@@ -81,42 +90,51 @@ class MolCharger(ABC):
     '''Base interface for defining various methods of generating and storing atomic partial charges'''
     @classmethod
     @abstractproperty
-    def TAG(cls):
+    def METHOD_NAME(cls):
         '''For setting the name of the method as a class attribute in child classes'''
         pass
 
     @abstractmethod
-    def charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
-        '''Concrete implementation for producing molecule partial charges'''
+    def _charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
+        '''Method for assigning molecular partial charges - concrete implementation in child classes'''
         pass
+
+    def charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
+        '''Wraps charge method call with logging'''
+        LOGGER.info(f'Assigning partial charges via the "{self.METHOD_NAME}" method')
+        cmol = self._charge_molecule(uncharged_mol)
+        LOGGER.info(f'Successfully assigned "{self.METHOD_NAME}" charges')
+
+        return cmol
+
 
 class ABE10Charger(MolCharger):
     '''Charger class for AM1-BCC-ELF10 exact charging'''
-    TAG = 'ABE10_exact'
+    METHOD_NAME = 'ABE10_exact'
 
-    def charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
+    def _charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
         '''Concrete implementation for AM1-BCC-ELF10'''
         return generate_molecule_charges(uncharged_mol, toolkit='OpenEye Toolkit', partial_charge_method='am1bccelf10', force_match=True)
 
 class EspalomaCharger(MolCharger):
     '''Charger class for AM1-BCC-ELF10 exact charging'''
-    TAG = 'Espaloma_AM1BCC'
+    METHOD_NAME = 'Espaloma_AM1BCC'
 
-    def charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
+    def _charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
         return generate_molecule_charges(uncharged_mol, toolkit='Espaloma Charge Toolkit', partial_charge_method='espaloma-am1bcc', force_match=True)
     
 class ABE10AverageCharger(MolCharger):
     '''Charger class for AM1-BCC-ELF10 exact charging'''
-    TAG = 'ABE10_averaged'
+    METHOD_NAME = 'ABE10_averaged'
 
     def set_residue_charges(self, residue_charges : ResidueChargeMap):
-        '''Slightly janky workaround to get initialization and the charge_molecule interface to have the right number of args'''
+        '''Slightly janky workaround to get initialization and the _charge_molecule interface to have the right number of args'''
         self.residue_charges = residue_charges
 
-    def charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
+    def _charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
         return apply_averaged_res_chgs(uncharged_mol, self.residue_charges, in_place=False)
 
 CHARGER_REGISTRY = { # Keep a registry of all SDF charger implementations for convenience
-    charger.TAG : charger
+    charger.METHOD_NAME : charger
         for charger in MolCharger.__subclasses__()
 }

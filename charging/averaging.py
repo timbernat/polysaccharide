@@ -1,13 +1,20 @@
+# Generic imports
 from collections import defaultdict
 from pathlib import Path
 
+# Typing and subclassing
+from .types import AtomIDMap, Accumulator, ResidueChargeMap
+from .residues import ChargedResidue
+
+# logging setup - will feed up to charging module parent logger
+import logging
+LOGGER = logging.getLogger(__name__)
+
+# MD and molecule manipulation
 from rdkit import Chem
 from openff.toolkit import ForceField
 from openff.toolkit.topology.molecule import Molecule
 from openff.toolkit.typing.engines.smirnoff.parameters import LibraryChargeHandler
-
-from .types import AtomIDMap, Accumulator, ResidueChargeMap
-from .residues import ChargedResidue
 
 
 # FUNCTIONS
@@ -76,12 +83,13 @@ def get_averaged_charges(cmol : Molecule, monomer_data : dict[str, dict], distri
 
 def write_lib_chgs_from_mono_data(monomer_data : dict[str, dict], offxml_src : Path, output_path : Path) -> tuple[ForceField, list[LibraryChargeHandler]]: # TODO - refactor to support using ResidueChargeMap for charges
     '''Takes a monomer JSON file (must contain charges!) and a force field XML file and appends Library Charges based on the specified monomers. Outputs to specified output_path'''
+    LOGGER.warning('Generating new forcefield XML with added Library Charges')
     assert(output_path.suffix == '.offxml') # ensure output path is pointing to correct file type
     assert(monomer_data.get('charges') is not None) # ensure charge entries are present
 
     forcefield = ForceField(offxml_src) # simpler to add library charges through forcefield API than to directly write to xml
-
     lc_handler = forcefield["LibraryCharges"]
+
     lib_chgs = [] #  all library charges generated from the averaged charges for each residue
     for resname, charge_dict in monomer_data['charges'].items(): # ensures no uncharged structure are written as library charges (may be a subset of the monomers structures in the file)
         # NOTE : original implementation deprecated due to imcompatibility with numbered ports, kept in comments here for backward compatibility and debug reasons
