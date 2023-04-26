@@ -1,1 +1,1 @@
-from . import building, offmol, rdmol
+from . import offmol, rdmol, polymer
