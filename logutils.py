@@ -2,41 +2,66 @@ import logging
 from logging import Logger
 
 from pathlib import Path
-from typing import Iterable, Union
+from typing import Iterable, Optional, Union
 from datetime import datetime
 
 
-LOGGER_REGISTRY = logging.root.manager.loggerDict # dict of all extant Loggers through all loaded modules, keyed by logger name
-LOG_FORMATTER   = logging.Formatter('%(asctime)s.%(msecs)03d [%(levelname)-7s:%(module)16s:line %(lineno)-3d] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+LOGGER_REGISTRY = lambda : logging.root.manager.loggerDict # dict of all extant Loggers through all loaded modules - NOTE : written as lambda to allow for updating 
+LOG_FORMATTER   = logging.Formatter('%(asctime)s.%(msecs)03d [%(levelname)-8s:%(module)16s:line %(lineno)-3d] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 class MultiStreamFileHandler(logging.FileHandler):
     '''Subclass to cut down boilerplate of logfile I/O for loggers with multiple origins'''
     def __init__(self, *args, loggers : Union[Logger, list[Logger]]=None, formatter : logging.Formatter=LOG_FORMATTER, proc_name : str='Process', **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
-        self.proc_name = proc_name
+        self.proc_name : str = proc_name
+        self.id : int = self.__hash__()  # generate unique ID number for tracking children
+        
         self.setFormatter(formatter)
-        self.personal_logger = logging.getLogger(str(self.__hash__())) # create unique logger for internal error logging
+        self.personal_logger : Logger = logging.getLogger(str(self.id)) # create unique logger for internal error logging
         self.personal_logger.addHandler(self)
+
+        self.parent : Optional[MultiLogFileHandler] = None # to track whether the current process is the child of another process
+        self.children : dict[int, MultiLogFileHandler] = {} # keep track of child process; purely for debug (under normal circumstances, children unregister themselves once their process is complete)
 
         self._loggers = []
         if loggers is None:
             return
     
-        if isinstance(loggers, Logger): # only reachable if loggers is excplicitly passed
+        if isinstance(loggers, Logger): # only reachable if loggers is explicitly passed
             self.register_logger(loggers) # handle the singleton logger case
         else:
             self.register_loggers(*loggers) # handle a list of loggers
 
-    def __enter__(self):
+    def subhandler(self, *args, **kwargs) -> 'MultiStreamFileHandler':
+        '''Generate a subordinate "child" process which reports back up to the spawning "parent" process once complete'''
+        child = MultiStreamFileHandler(*args, **kwargs)
+        self.children[child.id] = child # register the child for reference
+        child.parent = self # assert self as the child's parent (allows child to tell if any parent handlers exist above it)
+
+        return child
+    
+    def propogate_msg(self, level : int, msg : str) -> None:
+        '''Propogate a logged message up through the parent tree'''
+        self.personal_logger.log(level=level, msg=msg) # log message at the determined appropriate level
+        if self.parent is not None:                           # if the current process is the child of another...
+            self.parent.propogate_msg(level=level, msg=msg)   # ...pass the completion message up the chain to the parent
+
+    def __enter__(self) -> 'MultiStreamFileHandler':
         self._start_time = datetime.now()
         return self
     
-    def __exit__(self, exc_type, exception, traceback):
-        if exc_type is None:
-            self.personal_logger.info(f'{self.proc_name} completed in {datetime.now() - self._start_time}\n')
-        else:
-            self.personal_logger.error(f'{exc_type.__name__} : {exception}\n')
+    def __exit__(self, exc_type, exception, traceback) -> bool:
+        if exc_type is not None: # unexpected error
+            completion_msg = f'{exc_type.__name__} : {exception}\n'
+            log_level = logging.FATAL
+        else: # normal completion of context block
+            completion_msg = f'{self.proc_name} completed in {datetime.now() - self._start_time}\n'
+            log_level = logging.INFO
+
+        self.propogate_msg(level=log_level, msg=completion_msg) # log message at the determined appropriate level, passing up to parents if necessary
+        # if self.parent is not None:                                               
+        #     self.parent.children.pop(self.id) # orphan the current handler once its process is complete
         self.unregister_loggers() # prevents multiple redundant writes within the same Python session
 
         return True # TOSELF : return Falsy value only if errors are unhandled
@@ -63,7 +88,7 @@ class MultiStreamFileHandler(logging.FileHandler):
             logger.removeHandler(self)
         self._loggers.clear()
 
-# legacy versions, kept for backwards compatibility reasons        
+# legacy version, kept for backwards compatibility reasons        
 class MultiLogFileHandler(logging.FileHandler):
     '''Subclass to cut down boilerplate of logfile I/O for loggers with multiple origins'''
     def __init__(self, *args, **kwargs) -> None:
