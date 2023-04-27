@@ -69,20 +69,6 @@ def sort_dict_by_values(targ_dict : dict, reverse : bool=False) -> dict[Any, Any
             for key in sorted(targ_dict, key=lambda k : targ_dict[k], reverse=reverse)
     }
 
-# Date and time formatting
-DATETIME_FMT = '%m-%d-%Y_at_%H-%M-%S_%p' # formatted string which can be used in file names without error
-
-def extract_time(timestamp : str) -> str:
-    '''De-format a timestamped string and extract just the timestamp'''
-    return datetime.strptime(timestamp, DATETIME_FMT)
-
-def timestamp_now(fmt_str : str=DATETIME_FMT) -> str:
-    '''
-    Return a string timestamped with the current date and time (at the time of calling)
-    Is formatted such that the resulting string can be safely used in a filename
-    '''
-    return datetime.now().strftime(fmt_str)
-
 # Unit handling
 class MissingUnitsError(Exception):
     pass
