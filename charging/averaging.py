@@ -106,7 +106,7 @@ def write_lib_chgs_from_mono_data(monomer_data : dict[str, dict], offxml_src : P
         for atom in sorted(rdmol.GetAtoms(), key=lambda atom : atom.GetAtomMapNum()): # renumber according to map number order, NOT arbitrary RDKit atom ordering
             if atom.GetAtomicNum(): # if the atom is not wild type or invalid
                 old_map_num = atom.GetAtomMapNum() # TOSELF : order of operations in this clause is highly important (leave as is if refactoring!)
-                lc_entry[f'charge{new_atom_id}'] = f'{charge_dict[str(old_map_num)]} * elementary_charge'
+                lc_entry[f'charge{new_atom_id}'] = f'{charge_dict[old_map_num]} * elementary_charge'
 
                 atom.SetAtomMapNum(new_atom_id)
                 new_atom_id += 1; # increment valid atom index
