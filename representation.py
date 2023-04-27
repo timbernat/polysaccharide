@@ -1,9 +1,8 @@
 # Custom Imports
-from . import general, filetree
+from . import general, filetree, simulation
 from .solvation.packmol import packmol_solvate_wrapper
 from .charging.averaging import write_lib_chgs_from_mono_data
-from .charging.application import load_matched_charged_molecule
-from . import simulation
+from .charging.application import load_matched_charged_molecule, unserialize_monomer_json
 from .graphics.rdkdraw import compare_chgd_rdmols
 
 # Typing and Subclassing
@@ -179,6 +178,9 @@ class Polymer:
         if dest_dir is None:
             dest_dir = self.parent_dir
 
+        if not dest_dir.exists():
+            raise FileNotFoundError(f'Clone destination directory {dest_dir} does not exist')
+
         if clone_name is None:
             clone_name = f'{self.mol_name}_clone'
 
@@ -261,7 +263,7 @@ class Polymer:
             raise FileExistsError(f'No monomer file exists for {self.mol_name}')
 
         with self.monomer_file.open('r') as json_file: 
-            return json.load(json_file)
+            return json.load(json_file, object_hook=unserialize_monomer_json)
     
     @property
     def monomer_data_charged(self) -> dict[str, Any]:
@@ -270,12 +272,23 @@ class Polymer:
             raise FileExistsError(f'No monomer file with charged exists for {self.mol_name}')
 
         with self.monomer_file_chgd.open('r') as json_file: 
-            return json.load(json_file)
+            return json.load(json_file, object_hook=unserialize_monomer_json)
+
+    @property
+    def has_monomer_data_uncharged(self) -> bool:
+        return (self.monomer_file is not None)
+    
+    @property
+    def has_monomer_data_charged(self) -> bool:
+        return (self.monomer_file_chgd is not None)
 
     @property
     def has_monomer_data(self) -> bool:
-        return (self.monomer_file_ranked is not None)
-
+        '''Checking if ANY monomer file is present (charged or not)'''
+        # return (self.monomer_file_ranked is not None)
+        # return any(self.monomer_file, self.monomer_file_chgd)
+        return (self.has_monomer_data_uncharged or self.has_monomer_data_charged)
+    
     @property
     def has_structure_data(self) -> bool:
         return (self.structure_file is not None)
@@ -712,6 +725,15 @@ class PolymerManager:
         self.log_dir.mkdir(exist_ok=True)
         
         self.update_collection() # populate currently extant dirs
+
+    def __repr__(self) -> str:
+        disp_attrs = (
+            'collection_dir',
+            'log_dir'
+        )
+        attr_str = ', '.join(f'{attr}={getattr(self, attr)}' for attr in disp_attrs)
+
+        return f'PolymerManager({attr_str})'
 
 # READING EXISTING Polymers
     def update_collection(self, return_missing : bool=False) -> Optional[list[Path]]:
