@@ -11,18 +11,19 @@ import logging
 LOGGER = logging.getLogger(__name__)
 
 # Typing and subclassing
-from typing import Optional
+from typing import Any, Optional
 from abc import ABC, abstractmethod, abstractproperty
+from dataclasses import dataclass
 
 from . import TOOLKITS
 from .types import ResidueChargeMap
+from ..filetree import JSONifiable, JSONSerializable
 
 from openmm.unit import elementary_charge
 from openff.toolkit.topology.molecule import Molecule
 
 
-
-# FUNCTIONS
+# charge generation and application
 def generate_molecule_charges(mol : Molecule, toolkit : str='OpenEye Toolkit', partial_charge_method : str='am1bccelf10', force_match : bool=True) -> Molecule:
     '''Takes a Molecule object and computes partial charges with AM1BCC using toolkit method of choice. Returns charged molecule'''
     tk_reg = TOOLKITS.get(toolkit)
@@ -66,6 +67,41 @@ def apply_averaged_res_chgs(mol : Molecule, residue_charges : ResidueChargeMap, 
         _apply_averaged_res_chgs(new_mol, residue_charges)
         return new_mol
     
+# File I/O for format-specific decoding and deserialization
+@dataclass
+class ChargingParameters(JSONifiable):
+    '''For recording the parameters used to assign a Polymer sets of partial charges'''
+    overwrite_ff_xml   : bool
+    overwrite_chg_mono : bool
+
+    base_ff_path : Path 
+    charge_methods : list[str]    # all charging methods which should be applied
+    averaging_charge_method : str # method on which to base average charge calculations
+
+    @staticmethod
+    def serialize_json_dict(unser_jdict : dict[Any, Any]) -> dict[str, JSONSerializable]:
+        '''For converting selfs __dict__ data into a form that can be serialized to JSON'''
+        ser_jdict = {}
+        for key, value in unser_jdict.items():
+            if isinstance(value, Path):
+                ser_jdict[key] = str(value)
+            else:
+                ser_jdict[key] = value
+
+        return ser_jdict
+    
+    @staticmethod
+    def unserialize_json_dict(ser_jdict : dict[str, JSONSerializable]) -> dict[Any, Any]:
+        '''For de-serializing JSON-compatible data into a form that the __init__method can accept'''
+        unser_jdict = {}
+        for key, value in ser_jdict.items():
+            if key == 'base_ff_path':
+                unser_jdict[key] = Path(value)
+            else:
+                unser_jdict[key] = value
+
+        return unser_jdict
+
 def load_matched_charged_molecule(sdf_path : Path, assume_ordered : bool=True) -> Molecule:
     '''Special load instruction for charged SDF files - necessary to smoothly remap atom metadata from properties'''
     cmol_matched = Molecule.from_file(sdf_path)
@@ -84,6 +120,20 @@ def load_matched_charged_molecule(sdf_path : Path, assume_ordered : bool=True) -
     
     cmol_matched.properties.pop('metadata') # remove metadata packed for notational cleanliness
     return cmol_matched
+
+def unserialize_monomer_json(ser_jdict : dict[str, JSONSerializable]) -> dict[Any, Any]:
+    '''For unserializing charged residue maps in charged monomer JSON files'''
+    unser_jdict = {}
+    for key, value in ser_jdict.items():
+        try: # TOSELF : need try-except instead of explicit check for "charges" key since objct hook is applied to ALL subdicts (not just main)
+            unser_jdict[key] = { # convert string-keyed indices and charges back to numeric types
+                int(substruct_id) : float(charge)
+                    for substruct_id, charge in value.items()
+            }
+        except (ValueError, AttributeError):
+            unser_jdict[key] = value
+    
+    return unser_jdict
 
 # Molecule charging interface
 class MolCharger(ABC):
