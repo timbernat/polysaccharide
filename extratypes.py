@@ -3,7 +3,7 @@ from numpy.typing import ArrayLike
 from numpy import number, ndarray
 
 # Common matplotlib types
-from matplotlib.pyplot import Figure, Axes
+from matplotlib.pyplot import Figure, Axes # used to avoid matplotlib import in downstream modules if only needed for typing
 from matplotlib.colors import Colormap, Normalize
 
 from rdkit import Chem

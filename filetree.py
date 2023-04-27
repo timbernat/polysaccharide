@@ -109,7 +109,7 @@ class JSONifiable(ABC):
 
     # JSON encoding and decoding
     @abstractstaticmethod
-    def serialize_json_dict(unser_dict : dict[Any, Any]) -> dict[str, JSONSerializable]:
+    def serialize_json_dict(unser_jdict : dict[Any, Any]) -> dict[str, JSONSerializable]:
         '''For converting selfs __dict__ data into a form that can be serialized to JSON'''
         pass
     
