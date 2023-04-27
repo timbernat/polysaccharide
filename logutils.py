@@ -1,10 +1,10 @@
 import logging
 from logging import Logger
+from traceback import format_exception
 
 from pathlib import Path
 from typing import Iterable, Optional, Union
 from datetime import datetime
-
 
 LOGGER_REGISTRY = lambda : logging.root.manager.loggerDict # dict of all extant Loggers through all loaded modules - NOTE : written as lambda to allow for updating 
 LOG_FORMATTER   = logging.Formatter('%(asctime)s.%(msecs)03d [%(levelname)-8s:%(module)16s:line %(lineno)-3d] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
@@ -21,8 +21,8 @@ class MultiStreamFileHandler(logging.FileHandler):
         self.personal_logger : Logger = logging.getLogger(str(self.id)) # create unique logger for internal error logging
         self.personal_logger.addHandler(self)
 
-        self.parent : Optional[MultiLogFileHandler] = None # to track whether the current process is the child of another process
-        self.children : dict[int, MultiLogFileHandler] = {} # keep track of child process; purely for debug (under normal circumstances, children unregister themselves once their process is complete)
+        self.parent : Optional[MultiStreamFileHandler] = None # to track whether the current process is the child of another process
+        self.children : dict[int, MultiStreamFileHandler] = {} # keep track of child process; purely for debug (under normal circumstances, children unregister themselves once their process is complete)
 
         self._loggers = []
         if loggers is None:
@@ -51,9 +51,9 @@ class MultiStreamFileHandler(logging.FileHandler):
         self._start_time = datetime.now()
         return self
     
-    def __exit__(self, exc_type, exception, traceback) -> bool:
+    def __exit__(self, exc_type, exc, trace) -> bool:
         if exc_type is not None: # unexpected error
-            completion_msg = f'{exc_type.__name__} : {exception}\n'
+            completion_msg = ''.join(format_exception(exc_type, exc, trace)) # format error message and traceback similar to console printout
             log_level = logging.FATAL
         else: # normal completion of context block
             completion_msg = f'{self.proc_name} completed in {datetime.now() - self._start_time}\n'
