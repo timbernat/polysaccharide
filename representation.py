@@ -1,5 +1,6 @@
 # Custom Imports
 from . import general, filetree, simulation
+from .logutils import timestamp_now
 from .solvation.packmol import packmol_solvate_wrapper
 from .charging.averaging import write_lib_chgs_from_mono_data
 from .charging.application import load_matched_charged_molecule, unserialize_monomer_json
@@ -11,7 +12,7 @@ from .solvation.solvent import Solvent
 from .extratypes import SubstructSummary, Figure, Axes, ndarray
 from .charging.types import ResidueChargeMap
 
-from typing import Any, Callable, ClassVar, Iterable, Optional
+from typing import Any, Callable, ClassVar, Iterable, Optional, Union
 
 # File I/O
 import copy
@@ -57,7 +58,7 @@ class AlreadySolvatedError(Exception):
     pass
 
 
-# Polymer representation classes
+# Polymer representation class
 def create_subdir_properties(cls):
     '''For dynamically adding all subdirectories as accessible property fields - cleans up namespace for Polymer'''
     for dir_name in cls._SUBDIRS:
@@ -395,13 +396,6 @@ class Polymer:
     offmol_unmatched = largest_offmol_unmatched # alias for simplicity
 
 # OpenFF FORCEFIELD PROPERTIES
-    @property
-    def forcefield(self):
-        if self.ff_file is None:
-            raise MissingForceFieldData
-
-        return ForceField(self.ff_file, allow_cosmetic_attributes=True)
-    
     @update_checkpoint
     def create_FF_file(self, xml_src : Path, return_lib_chgs : bool=False) -> tuple[ForceField, Optional[list[LibraryChargeHandler]]]:
         '''Generate an OFF force field with molecule-specific (and solvent specific, if applicable) Library Charges appended'''
@@ -422,7 +416,14 @@ class Polymer:
         if return_lib_chgs:
             return forcefield, lib_chgs
         return forcefield
+    
+    @property
+    def forcefield(self):
+        if self.ff_file is None:
+            raise MissingForceFieldData
 
+        return ForceField(self.ff_file, allow_cosmetic_attributes=True)
+    
 # CHARGING
     @update_checkpoint
     def register_charges(self, charge_method : str, charges : ndarray[float]) -> None:
@@ -683,7 +684,7 @@ class Polymer:
 
     def make_sim_dir(self, affix : Optional[str]='') -> Path:
         '''Create a new timestamped simulation results directory'''
-        sim_name = f'{affix}{"_" if affix else ""}{general.timestamp_now()}'
+        sim_name = f'{affix}{"_" if affix else ""}{timestamp_now()}'
         sim_dir = self.MD/sim_name
         sim_dir.mkdir(exist_ok=False) # will raise FileExistsError in case of overlap
         LOGGER.info(f'Created new Simulation directory "{sim_name}"')
@@ -725,6 +726,32 @@ class Polymer:
             self.simulation_paths.clear()
             LOGGER.warning(f'Deleted all extant simulations for {self.mol_name}')
 
+# Filtering Polymers by attributes
+MolFilter = Callable[[Polymer], bool] # typing template for explicitness
+
+def filter_factory_by_attr(attr_name : str, condition : Callable[[Any], bool]=bool, inclusive : bool=True) -> MolFilter:
+    '''Factory function for creating MolFilters for arbitrary individual Polymer attributes
+
+    Takes the name of the attribute to look-up and a truthy "condition" function to validate attribute values (by default just bool() i.e. property exists)
+    Resulting filter will return Polymers for which the condition is met by default, or those for which it isn't if inclusive == False
+    '''
+    def _filter(polymer : Polymer) -> bool:
+        '''The actual case-specific filter '''
+        attr_val = getattr(polymer,  attr_name)
+        satisfied = condition(attr_val)
+        
+        if inclusive:
+            return satisfied
+        return not satisfied # invert truthiness if non-inclusive
+
+    return _filter
+
+has_monomers = lambda polymer : polymer.has_monomer_data
+AM1_sized    = lambda polymer : 0 < polymer.n_atoms <= 300
+# has_monomers = filter_factory_by_attr(attr_name='has_monomer_data')
+# AM1_sized    = filter_factory_by_attr(attr_name='n_atoms', condition=lambda n : 0 < n <= 300)
+
+# Manager class for collections of Polymers
 class PolymerManager:
     '''Class for organizing, loading, and manipulating collections of Polymer objects'''
     def __init__(self, collection_dir : Path):
@@ -797,6 +824,17 @@ class PolymerManager:
             mol_name : polymer.completed_sims
                 for mol_name, polymer in self.polymers.items()
                     if polymer.completed_sims # don't report directories without simulations
+        }
+
+    def filtered_by(self, filters : Union[MolFilter, Iterable[MolFilter]]) -> dict[str, Polymer]:
+        '''Return name-keyed dict of all Polymers in collection which meet all of a set of filtering conditions'''
+        if not isinstance(filters, Iterable):
+            filters = [filters] # handle the singleton case
+
+        return {
+            polymer.mol_name : polymer
+                for polymer in self.polymers_list
+                    if all(_filter(polymer) for _filter in filters)
         }
 
 # FILE AND Polymer GENERATION
