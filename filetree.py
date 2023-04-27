@@ -61,11 +61,39 @@ def append_to_json(json_path : Path, **kwargs) -> None:
     with json_path.open('w') as json_file:
         jdat = json.checkpoint(jdat, json_file, indent=4)
 
+class JSONifiable(ABC):
+    '''Base class which allows a child class to have its attributes written to and from a JSON file on disc between interpreter sessions
+    Children must implement how dict data (i.e. self.__dict__) is encoded to and decoded from JSON formatted dict'''
+
+    # JSON encoding and decoding
+    @abstractstaticmethod
+    def serialize_json_dict(unser_jdict : dict[Any, Any]) -> dict[str, JSONSerializable]:
+        '''For converting selfs __dict__ data into a form that can be serialized to JSON'''
+        pass
+    
+    @abstractstaticmethod
+    def unserialize_json_dict(ser_jdict : dict[str, JSONSerializable]) -> dict[Any, Any]:
+        '''For de-serializing JSON-compatible data into a form that the __init__method can accept'''
+        pass
+
+    # File I/O
+    def to_file(self, savepath : Path) -> None:
+        '''Store parameters in a JSON file on disc'''
+        assert(savepath.suffix == '.json')
+        with savepath.open('w') as dumpfile:
+            json.dump(self.__class__.serialize_json_dict(self.__dict__), dumpfile, indent=4)
+
+    @classmethod
+    def from_file(cls, loadpath : Path) -> 'JSONifiable':
+        assert(loadpath.suffix == '.json')
+        with loadpath.open('r') as loadfile:
+            params = json.load(loadfile, object_hook=cls.unserialize_json_dict)
+
+        return cls(**params)
+
 class JSONDict(dict):
-    '''
-    Dict subclass which also updates an underlying JSON file - effectively and on-disc dict
-    !NOTE! - JSON doesn't support non-string keys, so all keys given will be stringified - plan accordingly!
-    '''
+    '''Dict subclass which also updates an underlying JSON file - effectively and on-disc dict
+    !NOTE! - JSON doesn't support non-string keys, so all keys given will be stringified - plan accordingly!'''
     def __init__(self, json_path : Path, *args, **kwargs):
         if isinstance(json_path, str):
             json_path = Path(json_path) # make input arg a bit more flexible to str input from user end
@@ -102,32 +130,3 @@ class JSONDict(dict):
     def __delitem__(self, __key: str) -> None:
         super().__delitem__(__key)
         self._update_file()
-
-class JSONifiable(ABC):
-    '''Base class which allows a child class to have its attributes written to and from a JSON file on disc between interpreter sessions
-    Children must implement how dict data (i.e. self.__dict__) is encoded to and decoded from JSON formatted dict'''
-
-    # JSON encoding and decoding
-    @abstractstaticmethod
-    def serialize_json_dict(unser_jdict : dict[Any, Any]) -> dict[str, JSONSerializable]:
-        '''For converting selfs __dict__ data into a form that can be serialized to JSON'''
-        pass
-    
-    @abstractstaticmethod
-    def unserialize_json_dict(ser_jdict : dict[str, JSONSerializable]) -> dict[Any, Any]:
-        '''For de-serializing JSON-compatible data into a form that the __init__method can accept'''
-        pass
-
-    # File I/O
-    def to_file(self, savepath : Path) -> None:
-        '''Store parameters in a JSON file on disc'''
-        assert(savepath.suffix == '.json')
-        with savepath.open('w') as dumpfile:
-            json.dump(self.__class__.serialize_json_dict(self.__dict__), dumpfile, indent=4)
-
-    @classmethod
-    def from_file(cls, loadpath : Path) -> 'JSONifiable':
-        with loadpath.open('r') as loadfile:
-            params = json.load(loadfile, object_hook=cls.unserialize_json_dict)
-
-        return cls(**params)
