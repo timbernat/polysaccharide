@@ -81,6 +81,14 @@ def get_averaged_charges(cmol : Molecule, monomer_data : dict[str, dict], distri
 
     return avg_charges_by_residue, atom_id_mapping
 
+def get_averaged_residue_charges(cmol : Molecule, monomer_data : dict[str, dict], distrib_mono_charges : bool=True, net_mono_charge : float=0.0) -> dict[str, ResidueChargeMap]:
+    '''Wrapper for get_averaged_charges if only interested in substructure charge mapping (i.e. no surrounding Topology or charge redistribution info)'''
+    avgd_res, atom_id_mapping = get_averaged_charges(cmol, monomer_data=monomer_data)
+    return {
+        avgd_res.residue_name : avgd_res.charges
+            for avgd_res in avgd_res
+    }
+
 def write_lib_chgs_from_mono_data(monomer_data : dict[str, dict], offxml_src : Path, output_path : Path) -> tuple[ForceField, list[LibraryChargeHandler]]: # TODO - refactor to support using ResidueChargeMap for charges
     '''Takes a monomer JSON file (must contain charges!) and a force field XML file and appends Library Charges based on the specified monomers. Outputs to specified output_path'''
     LOGGER.warning('Generating new forcefield XML with added Library Charges')
