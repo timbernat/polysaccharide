@@ -1,8 +1,8 @@
 # Custom Imports
 from . import general, filetree, simulation
-from .logutils import timestamp_now
+from .logutils import timestamp_now, extract_time
 from .solvation.packmol import packmol_solvate_wrapper
-from .charging.averaging import write_lib_chgs_from_mono_data
+from .charging.averaging import get_averaged_residue_charges, write_lib_chgs_from_mono_data
 from .charging.application import load_matched_charged_molecule, unserialize_monomer_json
 from .graphics.rdkdraw import compare_chgd_rdmols
 
@@ -129,7 +129,7 @@ class Polymer:
             subdir.mkdir(exist_ok=True)
 
         self.checkpoint_path.touch() # must be done AFTER subdirectory creation, since the checkpoint file resides in the "checkpoint" subdirectory
-        LOGGER.debug(f'Built filetree for {self.mol_name}')
+        LOGGER.info(f'Built filetree for {self.mol_name}')
 
     def __repr__(self) -> str:
         disp_attrs = (
@@ -402,7 +402,7 @@ class Polymer:
         if not self.has_monomer_data_uncharged:
             raise MissingChargedMonomerData
 
-        ff_path = self.FF/f'{self.mol_name}.offxml' # path to output library charges to
+        ff_path = self.FF/f'{self.mol_name}.offxml' # path to output library charges
         forcefield, lib_chgs = write_lib_chgs_from_mono_data(self.monomer_data_charged, xml_src, output_path=ff_path)
 
         if self.solvent is not None:
@@ -429,12 +429,12 @@ class Polymer:
     def register_charges(self, charge_method : str, charges : ndarray[float]) -> None:
         '''For inserting/overwriting available charge sets in local session and on file'''
         assert(general.hasunits(charges)) # ensure charges have units (can't assign to Molecules if not)
-        LOGGER.debug(f'Registering charges from {charge_method} to {self.mol_name}')
+        LOGGER.info(f'Registering charges from {charge_method} to {self.mol_name}')
         self.charges[charge_method] = charges
 
     @update_checkpoint
     def unregister_charges(self, charge_method) -> None:
-        LOGGER.debug(f'Unregistering charges from {charge_method} to {self.mol_name}')
+        LOGGER.info(f'Unregistering charges from {charge_method} to {self.mol_name}')
         '''For removing available charge sets in local session and on file'''
         self.charges.pop(charge_method, None) # TOSELF : can get rid of None default arg if KeyError is istaed desired
 
@@ -479,8 +479,9 @@ class Polymer:
         '''Loads a charged Molecule from a registered charge method by key lookup
         Raises KeyError if the method requested is not registered'''
         return load_matched_charged_molecule(self.structure_files_chgd[charge_method], assume_ordered=True)
+    charged_offmol = charged_offmol_from_sdf # alias for convenience
 
-    def assert_charges_for(self, charger : MolCharger, strict : bool=True, verbose : bool=False) -> Molecule:
+    def assert_charges_for(self, charger : MolCharger, strict : bool=True, verbose : bool=False, return_cmol : bool=True) -> Optional[Molecule]:
         '''Return charged molecule associated with a particular charger's method
         If not already extant, will generate new charge sets and SDFs'''
         charge_method = charger.METHOD_NAME
@@ -492,21 +493,16 @@ class Polymer:
             LOGGER.warning(f'Found no existing "{charge_method}" partial charges for {self.mol_name}')
             cmol, sdf_path = self.charge_and_save_molecule(charger, strict=strict, verbose=verbose, chgd_monomers=False, topo_only=True) # ensure only uncharged monomers are used to avoid charge contamination
 
-        return cmol
-    
-    def compare_charges(self, charge_method_1 : str, charge_method_2 : str, *args, **kwargs) -> tuple[Figure, Axes]:
-        '''Plot a heat map showing the atomwise discrepancies in partial charges between any pair of registered charge sets'''
-        chgd_rdmol1 = self.charged_offmol_from_sdf(charge_method_1).to_rdkit()
-        chgd_rdmol2 = self.charged_offmol_from_sdf(charge_method_2).to_rdkit()
-
-        return compare_chgd_rdmols(chgd_rdmol1, chgd_rdmol2, charge_method_1, charge_method_2, *args, **kwargs)
+        if return_cmol:
+            return cmol
     
     @update_checkpoint
     def create_charged_monomer_file(self, residue_charges : ResidueChargeMap):
         '''Create a new copy of the current monomer file with residue-wise mapping of substructure id to charges'''
-        if not self.has_monomer_data_uncharged: # specifically checking for uncharged monomers (hence why self.has_monomers is not used here)
+        if not self.has_monomer_data_uncharged: 
             raise MissingMonomerData
 
+        LOGGER.warning('Generating new monomer JSON file with monomer-averaged charges')
         if self.solvent is not None and self.solvent.charges is not None: # ensure solvent "monomer" charge entries are also recorded
             residue_charges = {**residue_charges, **self.solvent.monomer_json_data['charges']} 
         chgd_monomer_data = {**self.monomer_data_uncharged} # load uncharged monomer_data and create copy - TOSELF : this variable name is confusing but is correct (will be charged subsequently)
@@ -515,10 +511,35 @@ class Polymer:
         chgd_mono_path = self.monomer_file.with_name(f'{self.mol_name}_charged.json')
         with chgd_mono_path.open('w') as chgd_json:
             json.dump(chgd_monomer_data, chgd_json, indent=4)
-        LOGGER.info(f'Created new monomer file for "{self.mol_name}" with monomer-averaged charge entries')
+        LOGGER.info(f'Generated new monomer file for "{self.mol_name}" with monomer-averaged charge entries')
 
         self.monomer_file_chgd = chgd_mono_path # record path to new json file
 
+    @update_checkpoint
+    def residue_charges(self, averaging_charge_method: str='ABE10_exact', overwrite_charged_monomer_file : bool=False) -> dict[str, ResidueChargeMap]:
+        '''Return a residue-name-keyed dict of atomic partial charges by substructure ID within a residue'''
+        if self.has_monomer_data_charged:
+            LOGGER.info(f'Found charged JSON, loading averaged charges for {self.mol_name} residues from file')
+            residue_charges = self.monomer_data_charged['charges']
+        else:
+            LOGGER.info(f'No charged JSON found, averaging charges over {self.mol_name} residues')
+            residue_charges = get_averaged_residue_charges(
+                cmol = self.charged_offmol(averaging_charge_method),
+                monomer_data = self.monomer_data
+            )
+        
+        if (not self.has_monomer_data_charged) or overwrite_charged_monomer_file: # TOSELF : this is separate from the above clauses as it might be called regardless of existing charges during overwrite
+            self.create_charged_monomer_file(residue_charges)
+
+        return residue_charges
+
+    def compare_charges(self, charge_method_1 : str, charge_method_2 : str, *args, **kwargs) -> tuple[Figure, Axes]:
+        '''Plot a heat map showing the atomwise discrepancies in partial charges between any pair of registered charge sets'''
+        chgd_rdmol1 = self.charged_offmol_from_sdf(charge_method_1).to_rdkit()
+        chgd_rdmol2 = self.charged_offmol_from_sdf(charge_method_2).to_rdkit()
+
+        return compare_chgd_rdmols(chgd_rdmol1, chgd_rdmol2, charge_method_1, charge_method_2, *args, **kwargs)
+    
 # FILE POPULATION AND MANAGEMENT
     @staticmethod
     def _file_population_factory(file_name_affix : str, subdir_name : str, targ_attr : str, desc : str='') -> Callable[[Path, bool], None]:
@@ -670,7 +691,7 @@ class Polymer:
     @property
     def chrono_sims(self) -> list[Path]:
         '''Return paths of all extant simulation subdirectories in chronological order of creation'''
-        return sorted(self.completed_sims, key=lambda path : general.extract_time(path.stem))
+        return sorted(self.completed_sims, key=lambda path : extract_time(path.stem))
     
     @property
     def oldest_sim_dir(self) -> Path:
@@ -695,12 +716,10 @@ class Polymer:
         '''Create an Interchange object for a SMIRNOFF force field using internal structural files'''
         off_topology = self.off_topology_matched() # self.off_topology
         off_topology.box_vectors = self.box_vectors.in_units_of(nanometer) # set box vector to allow for periodic simulation (will be non-periodic if polymer box vectors are unset i.e. NoneType)
-
         self.assign_charges_by_lookup(charge_method) # assign relevant charges prior to returning molecule
-        cmol = self.offmol 
   
         LOGGER.info(f'Creating SMIRNOFF Interchange for "{self.mol_name}"')
-        return Interchange.from_smirnoff(force_field=self.forcefield, topology=off_topology, charge_from_molecules=[cmol]) # package FF, topoplogy, and molecule charges together and ship out
+        return Interchange.from_smirnoff(force_field=self.forcefield, topology=off_topology, charge_from_molecules=[self.offmol]) # package FF, topoplogy, and molecule charges together and ship out
         
     def run_simulation_NPT(self, sim_params : simulation.SimulationParameters) -> Path:
         '''Initialize and run an OpenMM simulation in the Isothermal-Isobaric ensemble with a predefined set of setup parameters'''
@@ -848,6 +867,7 @@ class PolymerManager:
 
             polymer = Polymer(parent_dir, mol_name)
             polymer.populate_mol_files(struct_dir=struct_dir, monomer_dir=monomer_dir)
+            LOGGER.info('') # leave a line break between polymer entries to give some breathing room
 
     @refresh_listed_dirs
     def solvate_collection(self, solvents : Iterable[Solvent], template_path : Path, exclusion : float=None) -> None:
@@ -859,6 +879,7 @@ class PolymerManager:
             for polymer in self.polymers_list:
                 if (polymer.solvent is None): # don't double-solvate any already-solvated systems
                     solv_dir = polymer.solvate(solvent=solvent, template_path=template_path, exclusion=exclusion)
+                    LOGGER.info('') # leave a line break between polymer entries to give some breathing room
                     self.polymers_list.append(solv_dir) # ultimately pointless, as this will be cleared and reloaded upon refresh. Still, nice to be complete :)
 
 # PURGING (DELETION) METHODS
