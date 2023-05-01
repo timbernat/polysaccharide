@@ -2,7 +2,7 @@
 from .polyprops import PolyProp
 from ..general import hasunits, MissingUnitsError
 
-# General imports
+# Generic Imports
 from itertools import combinations
 from pathlib import Path
 

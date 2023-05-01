@@ -1,4 +1,4 @@
-# General imports
+# Generic Imports
 from datetime import datetime
 
 from functools import reduce
@@ -19,12 +19,12 @@ greek_letter_names = [ # names for greek character literals
     'rho', 'sigma_end', 'sigma', 'tau', 'upsilon', 'phi', 'chi', 'psi', 'omega'
 ]
 
-greek_start_idxs = { # indices where each case of the Greek alphabet starts in Unicode
+_greek_start_idxs = { # indices where each case of the Greek alphabet starts in Unicode
     'LOWER' : 945,
     'UPPER' : 913
 }
 
-for case, idx in greek_start_idxs.items():
+for case, idx in _greek_start_idxs.items():
     globals()[f'GREEK_{case}'] = { # add dicts to global namespace
         letter_name : chr(idx + i)
             for i, letter_name in enumerate(greek_letter_names)

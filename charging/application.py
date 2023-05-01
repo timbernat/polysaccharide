@@ -1,4 +1,4 @@
-# General imports
+# Generic Imports
 import numpy as np
 from ast import literal_eval
 
