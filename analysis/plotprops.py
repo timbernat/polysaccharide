@@ -32,8 +32,8 @@ def plot_time_props(dframe : pd.DataFrame, **plot_kwargs) -> tuple[plt.Figure, p
     if not isinstance(ax, np.ndarray):
         ax = np.array([ax]) # convert singleton subplots into arrays so that they don;t break when attempting to be flattened
 
-    for curr_ax, (name, rdf) in zip(ax.flatten(), prop_data.items()):
-        curr_ax.plot(times, rdf)
+    for curr_ax, (name, prop_data) in zip(ax.flatten(), prop_data.items()):
+        curr_ax.plot(times, prop_data)
         curr_ax.set_xlabel(times_label)
         curr_ax.set_ylabel(name)
 

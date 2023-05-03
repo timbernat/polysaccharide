@@ -1,5 +1,5 @@
 # Custom imports
-from .polyprops import PolyProp
+from .polyprops import PolyProp, DEFAULT_PROPS
 from ..general import hasunits, MissingUnitsError
 
 # Generic Imports
@@ -50,7 +50,7 @@ def acquire_rdfs(traj : mdt.Trajectory, max_rad : Quantity=1*nanometer) -> pd.Da
 
     return out_dframe
 
-def acquire_time_props(traj : mdt.Trajectory, properties : list[PolyProp], time_points : np.ndarray=None) -> pd.DataFrame:
+def acquire_time_props(traj : mdt.Trajectory, properties : list[PolyProp]=DEFAULT_PROPS, time_points : np.ndarray=None) -> pd.DataFrame:
     '''Compute and plot a battery of labelled and unit-ed properties over a given trajectory'''
     out_dframe = pd.DataFrame()
     if time_points is not None:
