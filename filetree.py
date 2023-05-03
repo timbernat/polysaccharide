@@ -1,16 +1,47 @@
 import json
 from pathlib import Path
-import subprocess
+from subprocess import Popen
 
-from typing import Any, Union
+from typing import Any, Callable, Optional, Union
 from abc import ABC, abstractstaticmethod
 
 from .general import iter_len
 
+class FileTypeError(Exception):
+    '''Raise when file extension is not valid for a particular application'''
+    pass
 
-# General-purpose methods
-startfile = lambda path : subprocess.Popen(['xdg-open', path]) # Replacement for os.startfile() functionality, since none natively exists in Linux
-dotless   = lambda suffix : suffix.split('.')[-1] # separate the dot from a SINGLE extension file suffix
+
+# FILE I/O functions
+startfile = lambda path : Popen(['xdg-open', path]) # Replacement for os.startfile() functionality, since none natively exists in Linux
+
+def filter_txt_by_regex(in_txt_path : Path, condition : Callable[[str], bool], out_txt_path : Optional[Path]=None, postfix : str='stripped', inclusive : bool=True, return_filtered_path : bool=False) -> Optional[Path]:
+    '''Create a copy of a text-based file containing only the lines which match to a given boolean condition
+    
+    If no explicit output path is given, will create an output file in the same directory as the source file
+    with the same name plus "postfix" tacked on. Can optionally return the path to the filtered file (else None)
+
+    "Inclusive" kw governs whether to write lines which DO or DON'T meet the condition'''
+    if out_txt_path is None:
+        out_txt_path = in_txt_path.with_stem(f'{in_txt_path.stem}{"_" if postfix else ""}{postfix}')
+
+    if (out_txt_path == in_txt_path):
+        raise PermissionError(f'Attempting to overwrite {in_txt_path} with regex filter') # prevent write clash
+    
+    if (out_txt_path.suffix != in_txt_path.suffix):  # prevent file type conversion during transfer
+        raise FileTypeError(f'Input and output file must have same extension (not {in_txt_path.suffix} and {out_txt_path.suffix})')
+
+    with out_txt_path.open('w') as outfile: 
+        with in_txt_path.open('r') as infile: # readfile is innermost in case error occurs during file read (caught by handler one level up)
+            for line in infile:
+                if (condition(line) == inclusive): # only write lines if (matching AND inclusive) OR (not matching AND exclusive)
+                    outfile.write(line)
+
+    if return_filtered_path:
+        return out_txt_path
+    
+# pathlib Path-manipulation functions
+dotless = lambda suffix : suffix.split('.')[-1] # separate the dot from a SINGLE extension file suffix
 
 def is_empty(path : Path) -> bool:
     '''Check if a directory is empty'''
