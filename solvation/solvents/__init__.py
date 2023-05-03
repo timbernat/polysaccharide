@@ -1,4 +1,4 @@
-import pkgutil
+import importlib, pkgutil
 from typing import Any, Protocol
 
 
@@ -10,9 +10,9 @@ class SolventModule(Protocol):
 
 
 _solvent_plugins : list[SolventModule] = [
-    # importlib.import_module(module_name, package=__file__)
-    loader.find_module(module_name).load_module(module_name)
-        for loader, module_name, ispkg in pkgutil.walk_packages(__path__)
+    importlib.import_module(f'{__package__}.{module_name}')
+    # loader.find_spec(module_name).loader.load_module(module_name)
+        for loader, module_name, ispkg in pkgutil.iter_modules(__path__)
             if ispkg # allows for standalone .py files to be placed parallel (but not below) this module
 ]
 
