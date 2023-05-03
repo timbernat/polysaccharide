@@ -21,8 +21,8 @@ class Solvent:
     MW : float      # molecular weight
 
     charges : dict[int, float]
-    structure_file : Path
-    forcefield_file : Path
+    structure_file  : Path = field(compare=False) # allows for match when transferring files between machines (local structure path will be different)
+    forcefield_file : Path = field(compare=False) # allows for match when transferring files between machines (local forcefield path will be different)
 
     def __hash__(self): # custom hash method needed as unit-ful attributes (such as density and MW) are unhashable Quantity objects
         return hash((self.name, self.formula, self.smarts))
