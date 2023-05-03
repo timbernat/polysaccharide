@@ -15,7 +15,7 @@ class FileTypeError(Exception):
 # FILE I/O functions
 startfile = lambda path : Popen(['xdg-open', path]) # Replacement for os.startfile() functionality, since none natively exists in Linux
 
-def filter_txt_by_regex(in_txt_path : Path, condition : Callable[[str], bool], out_txt_path : Optional[Path]=None, postfix : str='stripped', inclusive : bool=True, return_filtered_path : bool=False) -> Optional[Path]:
+def filter_txt_by_condition(in_txt_path : Path, condition : Callable[[str], bool], out_txt_path : Optional[Path]=None, postfix : str='filtered', inclusive : bool=True, return_filtered_path : bool=False) -> Optional[Path]:
     '''Create a copy of a text-based file containing only the lines which match to a given boolean condition
     
     If no explicit output path is given, will create an output file in the same directory as the source file
