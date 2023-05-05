@@ -12,8 +12,8 @@ import numpy as np
 import pandas as pd
 
 # Units
-from openmm.unit import Quantity  # purely for typehints
-from openmm.unit import nanometer
+from openmm.unit import Unit, Quantity  # purely for typehints
+from openmm.unit import nanometer, nanosecond
 
 
 # File I/O
@@ -50,12 +50,16 @@ def acquire_rdfs(traj : mdt.Trajectory, max_rad : Quantity=1*nanometer) -> pd.Da
 
     return out_dframe
 
-def acquire_time_props(traj : mdt.Trajectory, properties : list[PolyProp]=DEFAULT_PROPS, time_points : np.ndarray=None) -> pd.DataFrame:
+def acquire_time_props(traj : mdt.Trajectory, time_points : np.ndarray, time_unit : Unit=nanosecond, properties : list[PolyProp]=DEFAULT_PROPS) -> pd.DataFrame:
     '''Compute and plot a battery of labelled and unit-ed properties over a given trajectory'''
     out_dframe = pd.DataFrame()
-    if time_points is not None:
-        unit_str = f' ({time_points.unit.get_symbol()})' if hasunits(time_points) else ''
-        out_dframe[f'Sample Time{unit_str}'] = time_points
+
+    if hasunits(time_points):
+        time_points = time_points.in_units_of(time_unit) # convert to chosen time units - NOTE : must be done BEFORE extracting unit string
+        unit_str = f' ({time_points.unit.get_symbol()})'
+    else:
+        unit_str = ''
+    out_dframe[f'Sample Time{unit_str}'] = time_points
 
     for prop in properties:
         time_series = prop.compute(traj) 
@@ -65,3 +69,18 @@ def acquire_time_props(traj : mdt.Trajectory, properties : list[PolyProp]=DEFAUL
         out_dframe[prop.label] = time_series * prop.unit
 
     return out_dframe
+
+# Data formatting (for plotting)
+def _dframe_splitter_factory(regex : str):
+    '''Factory for creating splitting methods that choose an x-data column and remianinig y-data columns from a dataframe
+    based on a regular expression applied to the name of the cdata columns'''
+    def dframe_to_plot_data(dframe : pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+        '''Takes a DataFrame populated with RDF data and unpacks it into x and y data and labels for plotting and calculations'''
+        radii = dframe.filter(regex=regex)
+        rdfs = dframe[[label for label in dframe.columns if label != radii.columns[0]]] # index props with all non-time point columns
+
+        return radii, rdfs
+    return dframe_to_plot_data
+
+rdfs_to_plot_data  = _dframe_splitter_factory(regex='Radius')
+props_to_plot_data = _dframe_splitter_factory(regex='Time')
