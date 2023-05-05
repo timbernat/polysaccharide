@@ -4,6 +4,8 @@ from pathlib import Path
 from PIL.Image import Image
 
 import numpy as np
+from pandas import DataFrame
+from math import ceil
 
 import matplotlib.pyplot as plt
 import matplotlib.colors as mplcolors
@@ -30,6 +32,29 @@ def presize_subplots(nrows : int, ncols : int, scale : float=15.0, elongation : 
     '''
     aspect = (nrows / ncols) * elongation
     return plt.subplots(nrows, ncols, figsize=(scale, aspect*scale))
+
+def plot_df_props(x_dframe : DataFrame, y_dframe : DataFrame, nrows : int=None, ncols : int=None, **plot_kwargs) -> tuple[plt.Figure, plt.Axes]:
+    '''Takes a DataFrame populated with polymer time series property data and generates sequential plots'''
+    num_series = len(y_dframe.columns)
+    if (nrows is None) and (ncols is None): # TODO : deprecate this terribleness in favor of smart axis sizing to aspect ratio
+        nrows = 1
+        ncols = num_series
+    if (nrows is None):
+        nrows = ceil(num_series / ncols)
+    if (ncols is None):
+        ncols = ceil(num_series / nrows)
+    assert(nrows * ncols) >= num_series
+
+    fig, ax = presize_subplots(nrows=nrows, ncols=ncols, **plot_kwargs)
+    if not isinstance(ax, np.ndarray):
+        ax = np.array([ax]) # convert singleton subplots into arrays so that they don;t break when attempting to be flattened
+
+    for curr_ax, (name, y_dframe) in zip(ax.flatten(), y_dframe.items()):
+        curr_ax.plot(x_dframe, y_dframe)
+        curr_ax.set_xlabel(x_dframe.columns[0])
+        curr_ax.set_ylabel(name)
+
+    return fig, ax
 
 # COLORBAR FUNCTIONS
 def make_cmapper(cmap_name : str, vmin : float, vmax : float) -> ColorMapper:
