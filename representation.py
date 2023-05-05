@@ -1,6 +1,6 @@
 # Custom Imports
 from . import general, filetree, simulation
-from .logutils import timestamp_now, extract_time
+from .logutils import timestamp_now, extract_time, ProcessLogHandler
 from .solvation.packmol import packmol_solvate_wrapper
 from .charging.averaging import get_averaged_residue_charges, write_lib_chgs_from_mono_data
 from .charging.application import load_matched_charged_molecule, unserialize_monomer_json
@@ -22,6 +22,7 @@ import json, pickle
 
 # Logging
 import logging
+from logging import Logger
 LOGGER = logging.getLogger(__name__)
 
 # Cheminformatics and MD
@@ -102,7 +103,6 @@ class Polymer:
         self.monomer_file_chgd    : Optional[Path]   = None # .JSON
         self.structure_file       : Optional[Path]   = None # .PDB
         self.structure_files_chgd : dict[str, Path]  = {} # dict of .SDF
-        self.simulation_paths     : dict[Path, Path] = {}
 
         # "Private" attributes
         self._off_topology : Topology = None
@@ -683,10 +683,29 @@ class Polymer:
         return solva_dir
     
 # SIMULATION
+    def clean_sims(self):
+        '''Get rid of any empty (i.e. failed) simulation folders'''
+        for sim_dir in self.MD.iterdir():
+            if filetree.is_empty(sim_dir):
+                sim_dir.rmdir()
+
     @property
     def completed_sims(self) -> list[Path]:
         '''Return paths to all extant, non-empty simulation subdirectories'''
-        return [sim_dir for sim_dir in self.MD.iterdir() if not filetree.is_empty(sim_dir)]
+        self.clean_sims() # discard empty simulation folders
+        return [sim_dir for sim_dir in self.MD.iterdir()]
+    
+    @property
+    def simulation_paths(self):
+        '''Dict of all extant simulation dirs and their internal path reference files'''
+        sim_paths = {}
+        for sim_dir in self.completed_sims:
+            try:
+                sim_paths[sim_dir] = next(sim_dir.glob('*_paths.json'))
+            except StopIteration:
+                sim_paths[sim_dir] = None
+        
+        return sim_paths
     
     @property
     def chrono_sims(self) -> list[Path]:
@@ -702,6 +721,7 @@ class Polymer:
     def newest_sim_dir(self) -> Path:
         '''Return the most recent simulation subdir'''
         return self.chrono_sims[-1]
+
 
     def make_sim_dir(self, affix : Optional[str]='') -> Path:
         '''Create a new timestamped simulation results directory'''
@@ -728,10 +748,9 @@ class Polymer:
         interchange = self.interchange(sim_params.charge_method)
         integrator  = LangevinMiddleIntegrator(sim_params.temperature, sim_params.friction_coeff, sim_params.timestep)
         barostat    = MonteCarloBarostat(sim_params.pressure, sim_params.temperature, sim_params.barostat_freq)
-        sim = simulation.create_simulation(interchange, integrator, forces=[barostat])
+        sim         = simulation.create_simulation(interchange, integrator, forces=[barostat])
 
-        self.simulation_paths[sim_folder] = simulation.run_simulation(sim, output_folder=sim_folder, output_name=self.mol_name, sim_params=sim_params) # run simulation and record paths to output files
-
+        sim_paths = simulation.run_simulation(sim, output_folder=sim_folder, output_name=self.mol_name, sim_params=sim_params) # run simulation and record paths to output files
         return sim_folder
 
     def purge_sims(self, really : bool=False) -> None:
@@ -742,7 +761,6 @@ class Polymer:
         if self.completed_sims: # only attempt removal and logging if simulations are actually present
             filetree.clear_dir(self.MD)
             filetree.clear_dir(self.logs)
-            self.simulation_paths.clear()
             LOGGER.warning(f'Deleted all extant simulations for {self.mol_name}')
 
 # Filtering Polymers by attributes
@@ -765,10 +783,12 @@ def filter_factory_by_attr(attr_name : str, condition : Callable[[Any], bool]=bo
 
     return _filter
 
-has_monomers = lambda polymer : polymer.has_monomer_data
-AM1_sized    = lambda polymer : 0 < polymer.n_atoms <= 300
-# has_monomers = filter_factory_by_attr(attr_name='has_monomer_data')
-# AM1_sized    = filter_factory_by_attr(attr_name='n_atoms', condition=lambda n : 0 < n <= 300)
+identity     = lambda polymer : True # no filter, return all polymers (or conversely None if non-inclusive)
+has_sims     = filter_factory_by_attr(attr_name='completed_sims')
+has_monomers = filter_factory_by_attr(attr_name='has_monomer_data')
+AM1_sized    = filter_factory_by_attr(attr_name='n_atoms', condition=lambda n : 0 < n <= 300)
+# has_monomers = lambda polymer : polymer.has_monomer_data 
+# AM1_sized    = lambda polymer : 0 < polymer.n_atoms <= 300
 
 # Manager class for collections of Polymers
 class PolymerManager:
@@ -819,6 +839,26 @@ class PolymerManager:
             self.update_collection(return_missing=False)
             return ret_val
         return update_fn
+    
+    def logging_wrapper(self, loggers : Union[Logger, list[Logger]], proc_name : Optional[str]=None, filters : Optional[Union[MolFilter, Iterable[MolFilter]]]=None) -> Callable[[Callable], Callable]: # NOTE : this is deliberately NOT a staticmethod
+        '''Decorator for wrapping an action over a polymer into a logged loop over all present polymers
+        Can optionally specify a set of filters to only apply the action to a subset of the polymers present
+        Logs generated at both the individual polymer level and the global Manager level (messages get passed upwards)'''
+        if filters is None:
+            filters = [identity] # no filtering if not explicitly specified
+        sample_dirs = self.filtered_by(filters)
+
+        # TODO : guarantee that the local LOGGER is always present, regardless of the logger(s) passed
+
+        def logging_decorator(funct : Callable[[Polymer, Any], None]) -> Callable[..., Any]:
+            def wrapper(*args, **kwargs) -> None:
+                with ProcessLogHandler(filedir=self.log_dir, loggers=loggers, proc_name=proc_name, timestamp=True) as msf_handler:
+                    for i, (mol_name, polymer) in enumerate(sample_dirs.items()):
+                        LOGGER.info(f'Current molecule: "{mol_name}" ({i + 1}/{len(sample_dirs)})') # +1 converts to more human-readable 1-index for step count
+                        with msf_handler.subhandler(filedir=polymer.logs, loggers=loggers, proc_name=f'{proc_name} for {mol_name}', timestamp=True) as subhandler: # also log actions to individual Polymers
+                            funct(polymer, *args, **kwargs)
+            return wrapper
+        return logging_decorator
     
 # PROPERTIES
     @property
