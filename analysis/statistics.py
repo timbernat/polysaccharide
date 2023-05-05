@@ -1,4 +1,5 @@
 import numpy as np
+import ruptures as rpt
 
 
 def normalize(series : np.ndarray) -> np.ndarray:
@@ -19,3 +20,13 @@ def autocorrelate(series : np.ndarray) -> np.ndarray:
     autocorr /= series.size # normalize to range [-1, 1] by including number of datapoints (due to variance estimator)
 
     return autocorr
+
+def equil_loc(series : np.ndarray) -> int:
+    '''Estimate the index in a series after which equilibration has occurred'''
+    if not isinstance(series, np.ndarray):
+        series = np.array(series)
+
+    algo = rpt.Binseg(model='l2').fit(series)
+    change_times = algo.predict(n_bkps=1)
+
+    return change_times[0]
