@@ -19,8 +19,8 @@ from openff.interchange import Interchange
 from openmm import Integrator
 from openmm.openmm import Force
 from openmm.app import Simulation
-from openmm.app import PDBReporter, StateDataReporter, CheckpointReporter
-Reporter = Union[PDBReporter, StateDataReporter, CheckpointReporter] # for clearer typehinting
+from openmm.app import PDBReporter, DCDReporter, StateDataReporter, CheckpointReporter
+Reporter = Union[PDBReporter, DCDReporter, StateDataReporter, CheckpointReporter] # for clearer typehinting
 
 # Units, quantities, and dimensions
 import openmm.unit
@@ -35,6 +35,8 @@ class SimulationParameters(JSONifiable):
     total_time  : Quantity
     num_samples : int
     charge_method : str
+
+    report_to_pdb : bool = True
     reported_state_data : dict[str, bool] = field(default_factory=dict)
 
     timestep    : Quantity = (2 * femtosecond)
@@ -157,7 +159,7 @@ def run_simulation(simulation : Simulation, output_folder : Path, output_name : 
     sim_paths_out = output_folder / f'{prefix}sim_paths.json'
     sim_paths = SimulationPaths(
         sim_params=output_folder / f'{prefix}sim_parameters.json',
-        trajectory=output_folder / f'{prefix}traj.pdb',
+        trajectory=output_folder / f'{prefix}traj.{"pdb" if sim_params.report_to_pdb else "dcd"}',
         state_data=output_folder / f'{prefix}state_data.csv',
         checkpoint=output_folder / f'{prefix}checkpoint.chk',
     )
@@ -165,9 +167,13 @@ def run_simulation(simulation : Simulation, output_folder : Path, output_name : 
     sim_params.to_file(sim_paths.sim_params) 
 
     # for saving pdb frames and reporting state/energy data - NOTE : all file paths must be stringified for OpenMM
-    pdb_rep = PDBReporter(str(sim_paths.trajectory), sim_params.record_freq)  # save frames at the specified interval
     state_rep = StateDataReporter(str(sim_paths.state_data), sim_params.record_freq, **sim_params.reported_state_data)
-    for rep in (pdb_rep, state_rep):
+    if sim_params.report_to_pdb:
+        traj_rep = PDBReporter(file=str(sim_paths.trajectory), reportInterval=sim_params.record_freq)  # save frames at the specified interval
+    else:
+        traj_rep = DCDReporter(file=str(sim_paths.trajectory), reportInterval=sim_params.record_freq)  # save frames at the specified interval
+
+    for rep in (traj_rep, state_rep):
         simulation.reporters.append(rep) # add any desired reporters to simulation for tracking
 
     # minimize and run simulation
