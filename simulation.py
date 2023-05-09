@@ -36,7 +36,7 @@ class SimulationParameters(JSONifiable):
     num_samples : int
     charge_method : str
 
-    report_to_pdb : bool = True
+    report_to_pdb : bool = False
     reported_state_data : dict[str, bool] = field(default_factory=dict)
 
     timestep    : Quantity = (2 * femtosecond)
@@ -55,6 +55,11 @@ class SimulationParameters(JSONifiable):
     def record_freq(self) -> int:
         '''Number of steps between each taken sample'''
         return round(self.num_steps / self.num_samples)
+    
+    @property
+    def record_interval(self) -> float:
+        '''Length of time between successive samples'''
+        return self.record_freq * self.timestep
     
     @property
     def time_points(self) -> np.ndarray[int]:
@@ -167,13 +172,15 @@ def run_simulation(simulation : Simulation, output_folder : Path, output_name : 
     sim_params.to_file(sim_paths.sim_params) 
 
     # for saving pdb frames and reporting state/energy data - NOTE : all file paths must be stringified for OpenMM
-    state_rep = StateDataReporter(str(sim_paths.state_data), sim_params.record_freq, **sim_params.reported_state_data)
+    check_rep = CheckpointReporter(str(sim_paths.checkpoint), reportInterval=sim_params.record_freq)
+    state_rep = StateDataReporter(str(sim_paths.state_data), reportInterval=sim_params.record_freq, **sim_params.reported_state_data)
     if sim_params.report_to_pdb:
         traj_rep = PDBReporter(file=str(sim_paths.trajectory), reportInterval=sim_params.record_freq)  # save frames at the specified interval
     else:
         traj_rep = DCDReporter(file=str(sim_paths.trajectory), reportInterval=sim_params.record_freq)  # save frames at the specified interval
 
-    for rep in (traj_rep, state_rep):
+    reporters : tuple[Reporter] =  (check_rep, state_rep, traj_rep)
+    for rep in reporters:
         simulation.reporters.append(rep) # add any desired reporters to simulation for tracking
 
     # minimize and run simulation
