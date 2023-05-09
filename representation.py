@@ -4,6 +4,8 @@ from .logutils import timestamp_now, extract_time, ProcessLogHandler
 from .solvation.packmol import packmol_solvate_wrapper
 from .charging.averaging import get_averaged_residue_charges, write_lib_chgs_from_mono_data
 from .charging.application import load_matched_charged_molecule, unserialize_monomer_json
+from .simulation import SimulationPaths, SimulationParameters
+from .analysis.trajectory import load_traj
 from .graphics.rdkdraw import compare_chgd_rdmols
 
 # Typing and Subclassing
@@ -13,6 +15,7 @@ from .extratypes import SubstructSummary, Figure, Axes, ndarray
 from .charging.types import ResidueChargeMap
 
 from typing import Any, Callable, ClassVar, Iterable, Optional, Union
+from mdtraj import Trajectory
 
 # File I/O
 import copy
@@ -721,8 +724,7 @@ class Polymer:
     def newest_sim_dir(self) -> Path:
         '''Return the most recent simulation subdir'''
         return self.chrono_sims[-1]
-
-
+    
     def make_sim_dir(self, affix : Optional[str]='') -> Path:
         '''Create a new timestamped simulation results directory'''
         sim_name = f'{affix}{"_" if affix else ""}{timestamp_now()}'
@@ -752,6 +754,23 @@ class Polymer:
 
         sim_paths = simulation.run_simulation(sim, output_folder=sim_folder, output_name=self.mol_name, sim_params=sim_params) # run simulation and record paths to output files
         return sim_folder
+
+    def load_sim_paths_and_params(self, sim_dir : Path=None) -> tuple[SimulationPaths, SimulationParameters]:
+        '''Takes a path to a simulation directory and returns the associated simulation file paths and parameters
+        If no path is provided, will use most recent simulation by default'''
+        if sim_dir is None:
+            sim_dir = self.newest_sim_dir # use most recent simulation 
+
+        sim_paths_file = self.simulation_paths[sim_dir] # will raise KeyError if no such simulation exists
+        sim_paths = SimulationPaths.from_file(sim_paths_file)
+        sim_params = SimulationParameters.from_file(sim_paths.sim_params)
+
+        return sim_paths, sim_params
+
+    def load_traj(self, sim_dir : Path, **kwargs) -> Trajectory:
+        '''Load a trajectory for a simulation directory'''
+        sim_paths, sim_params = self.load_sim_paths_and_params(sim_dir)
+        return load_traj(sim_paths.trajectory, topo_path=self.structure_file, **kwargs)
 
     def purge_sims(self, really : bool=False) -> None:
         '''Empties all extant simulation folders - MAKE SURE YOU KNOW WHAT YOU'RE DOING HERE'''
