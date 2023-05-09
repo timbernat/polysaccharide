@@ -75,7 +75,7 @@ def local_rename(path : Path, new_name : str) -> Path:
     '''Performs file rename relative to the parent directory (NOT the cwd)'''
     return path.rename(path.with_name(new_name))
 
-def local_rename_ext(path : Path, new_stem : str) -> Path:
+def local_restem(path : Path, new_stem : str) -> Path:
     '''Performs file rename relative to the parent directory (NOT the cwd), preserving the extension of the original file'''
     return path.rename(path.with_stem(new_stem))
 

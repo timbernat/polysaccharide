@@ -17,9 +17,9 @@ from openmm.unit import nanometer, nanosecond
 
 
 # File I/O
-def load_traj(traj_path : Path, topo_path : Path, sample_interval : int=1, remove_solvent : bool=True, inplace : bool=True) -> mdt.Trajectory:
+def load_traj(traj_path : Path, topo_path : Path, sample_interval : int=1, remove_solvent : bool=True, inplace : bool=True, **kwargs) -> mdt.Trajectory:
     '''Wrapper to load trajectories from files (avoids mdtraj import in external modules)'''
-    traj = mdt.load(traj_path, top=topo_path, stride=sample_interval)
+    traj = mdt.load(traj_path, top=topo_path, stride=sample_interval, **kwargs)
     if remove_solvent:
         traj = traj.remove_solvent(inplace=inplace) # don't generate new copy when de-solvating
     
