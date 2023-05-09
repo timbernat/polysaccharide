@@ -68,9 +68,9 @@ def make_cmapper(cmap_name : str, vmin : float, vmax : float) -> ColorMapper:
     
     return cmapper
 
-def plot_image_with_colorbar(image : Image, cmap : Colormap, norm : Normalize, label : str='', ticks : Optional[list[float]]=None, dim : int=8) -> tuple[plt.Figure, plt.Axes]:
+def plot_image_with_colorbar(image : Image, cmap : Colormap, norm : Normalize, label : str='', ticks : Optional[list[float]]=None, dim : int=8, aspect : float=1/1) -> tuple[plt.Figure, plt.Axes]:
     '''Plots a PIL image with a colorbar and norm of ones choice'''
-    fig, ax = plt.subplots(figsize=(dim, dim))
+    fig, ax = plt.subplots(figsize=(dim, aspect*dim))
 
     mpim = ax.imshow(image, cmap=cmap, norm=norm)
     width, height = image.size
