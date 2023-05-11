@@ -48,7 +48,7 @@ def aggregate_atom_prop(rdmol : RDMol, prop : str, prop_type : type=str) -> list
             for atom in rdmol.GetAtoms()
     ]
 
-# Property modification functions
+# Property modification functions - TODO : add non-inplace versions of all of these methods
 def hydrogenate_rdmol_ports(rdmol : RDMol, return_port_ids : bool=False) -> Optional[list[int]]:
     '''Replace all ports (i.e. wild *-type atoms) in a molecule with hydrogens'''
     port_ids = []
@@ -65,3 +65,8 @@ def assign_ordered_atom_map_nums(rdmol : RDMol) -> None:
     for atom in rdmol.GetAtoms():
         atom.SetAtomMapNum(atom.GetIdx()) # need atom map numbers to preserve positional mapping in SMARTS
         # atom.SetAtomMapNum(atom.GetIdx() + 1) # need atom map numbers to preserve positional mapping in SMARTS; "+1" avoids mapping any atoms to 0
+
+def clear_atom_map_nums(rdmol : RDMol) -> None:
+    '''Removes atom map numbers from all atoms in an RDMol'''
+    for atom in rdmol.GetAtoms():
+        atom.SetAtomMapNum(0)
