@@ -1,15 +1,13 @@
 # Typing
-from ..molutils.rdmol import rdcompare, rdconvert
-from ..general import GREEK_UPPER
-from ..extratypes import RDMol
-from . import imageutils, plotutils
-from .named_colors import WHITE
+from . import rdprops
+from .rdtypes import RDMol
+from ...graphics.named_colors import WHITE
 
 # Plotting
 import PIL
-from typing import Union
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize, Colormap
+from ...graphics import imageutils, plotutils
 from rdkit.Chem.Draw import rdMolDraw2D, SimilarityMaps, MolsToGridImage, IPythonConsole
            
 
@@ -18,7 +16,7 @@ def set_rdkdraw_size(dim : int, aspect : float):
     IPythonConsole.molSize = (int(aspect*dim), dim)   # Change image size
 
 def rdmol_prop_heatmap(rdmol : RDMol, prop : str, cmap : Colormap, norm : Normalize, annotate : bool=False, precision : int=5, img_size : tuple[int, int]=(1_000, 1_000)) -> bytes: #IPyImage:
-    '''Take a charged RDKit Mol and color atoms based on the magnitude of their charge'''
+    '''Take a charged RDKit Mol and color atoms based on the magnitude of a particular atomwise property'''
     colors, prop_vals, atom_nums = {}, [], []
     for atom in rdmol.GetAtoms():
         atom_num, prop_val = atom.GetIdx(), atom.GetDoubleProp(prop)
@@ -36,19 +34,14 @@ def rdmol_prop_heatmap(rdmol : RDMol, prop : str, cmap : Colormap, norm : Normal
     
     return imageutils.img_from_bytes(img_bytes)
 
-def compare_chgd_rdmols(chgd_rdmol_1 : RDMol, chgd_rdmol_2 : RDMol, chg_method_1 : str, chg_method_2 : str, cmap : Colormap=plt.get_cmap('turbo'),
-                         flatten : bool=True, converter : Union[str, rdconvert.RDConverter]='SMARTS', **heatmap_args) -> tuple[plt.Figure, plt.Axes]:
-    '''Plot a labelled heatmap of the charge differences between 2 strucuturally identical RDKit Molecules with different partial charges'''
-    if flatten:
-        chgd_rdmol_1 = rdcompare.flattened_rdmol(chgd_rdmol_1, converter=converter)
-        chgd_rdmol_2 = rdcompare.flattened_rdmol(chgd_rdmol_2, converter=converter)
-
-    diff = rdcompare.difference_rdmol(chgd_rdmol_1, chgd_rdmol_2)
-    vmin, vmax = diff.GetDoubleProp('DeltaPartialChargeMin'), diff.GetDoubleProp('DeltaPartialChargeMax'),
+def rdmol_prop_heatmap_colorscaled(rdmol : RDMol, prop : str, cmap : Colormap=plt.get_cmap('turbo'), cbar_label : str='', **heatmap_args) -> tuple[plt.Figure, plt.Axes]:
+    '''Plot a labelled heatmap of the charge differences between 2 structurally identical RDKit Molecules with different partial charges'''
+    prop_vals = rdprops.aggregate_atom_prop(rdmol, prop, prop_type=float) # explicitly ensure the property is interpreted as a numericla value
+    vmin, vmax = min(prop_vals), max(prop_vals)
     norm = Normalize(vmin, vmax)
     ticks = (vmin, 0, vmax)
 
-    image = rdmol_prop_heatmap(diff, prop='DeltaPartialCharge', cmap=cmap, norm=norm, **heatmap_args)
+    image = rdmol_prop_heatmap(rdmol, prop=prop, cmap=cmap, norm=norm, **heatmap_args)
     image = imageutils.crop_borders(image, bg_color=WHITE)
 
-    return plotutils.plot_image_with_colorbar(image, cmap, norm, label=f'{GREEK_UPPER["delta"]}q (elem. charge): {chg_method_1} vs {chg_method_2}', ticks=ticks)
+    return plotutils.plot_image_with_colorbar(image, cmap, norm, label=cbar_label, ticks=ticks)
