@@ -6,7 +6,7 @@ from .charging.averaging import get_averaged_residue_charges, write_lib_chgs_fro
 from .charging.application import load_matched_charged_molecule, unserialize_monomer_json
 from .simulation import SimulationPaths, SimulationParameters
 from .analysis.trajectory import load_traj
-from .graphics.rdkdraw import compare_chgd_rdmols
+from .molutils.rdmol.rdcompare import compare_chgd_rdmols
 
 # Typing and Subclassing
 from .charging.application import MolCharger

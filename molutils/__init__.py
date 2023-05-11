@@ -1,1 +1,1 @@
-from . import offmol, rdmol, polymer
+from . import fragment, offmol, rdmol, polymer
