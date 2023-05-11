@@ -8,7 +8,6 @@ class SolventModule(Protocol):
     def register_to(registry : dict[str, Any]) -> None:
         pass
 
-
 _solvent_plugins : list[SolventModule] = [
     importlib.import_module(f'{__package__}.{module_name}')
     # loader.find_spec(module_name).loader.load_module(module_name)

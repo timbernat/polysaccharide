@@ -1,8 +1,9 @@
-from . import analysis, charging, graphics, molutils, solvation
-from . import extratypes, filetree, general, logutils, representation, simulation
+import pkgutil, importlib
 
-LOGGERS_MASTER = [ # keep registry of all submodule loggers for ease of reference
-    charging.LOGGER,
-    representation.LOGGER,
-    simulation.LOGGER
-]
+LOGGERS_MASTER = [] # contains module-specific loggers for all submodules
+for _loader, _module_name, _ispkg in pkgutil.iter_modules(__path__):
+    module = importlib.import_module(f'{__package__}.{_module_name}')
+    globals()[_module_name] = module # register module to namespace
+
+    if hasattr(module, 'LOGGER'): # make record of logger if one is present
+        LOGGERS_MASTER.append(getattr(module, 'LOGGER'))
