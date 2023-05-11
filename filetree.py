@@ -93,7 +93,7 @@ def append_to_json(json_path : Path, **kwargs) -> None:
         jdat = json.checkpoint(jdat, json_file, indent=4)
 
 class JSONifiable(ABC):
-    '''Base class which allows a child class to have its attributes written to and from a JSON file on disc between interpreter sessions
+    '''Base class which allows a child class to have its attributes written to and from a JSON file on-disc between interpreter sessions
     Children must implement how dict data (i.e. self.__dict__) is encoded to and decoded from JSON formatted dict'''
 
     # JSON encoding and decoding
@@ -121,6 +121,15 @@ class JSONifiable(ABC):
             params = json.load(loadfile, object_hook=cls.unserialize_json_dict)
 
         return cls(**params)
+    
+    @staticmethod
+    def update_checkpoint(funct : Callable) -> Callable[[Any], Optional[Any]]: # NOTE : this deliberately doesn't have a "self" arg!
+        '''Decorator for updating the on-disc checkpoint file after a function updates a Polymer attribute'''
+        def update_fn(self, *args, **kwargs) -> Optional[Any]:
+            ret_val = funct(self, *args, **kwargs) # need temporary value so update call can be made before returning
+            self.to_file()
+            return ret_val
+        return update_fn
 
 class JSONDict(dict):
     '''Dict subclass which also updates an underlying JSON file - effectively and on-disc dict
