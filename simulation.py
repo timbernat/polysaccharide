@@ -1,3 +1,5 @@
+'''For preparing, executing, documenting, and reproducing MD simulations using OpenMM'''
+
 # General
 from pathlib import Path
 import re
@@ -5,7 +7,7 @@ import numpy as np
 
 # Typing and subclassing
 from dataclasses import dataclass, field
-from typing import Any, Optional, Union
+from typing import Any, Iterable, Optional, Union
 from .filetree import JSONSerializable, JSONifiable
 
 # Logging
@@ -16,8 +18,8 @@ LOGGER = logging.getLogger(__name__)
 from openff.units import unit as offunit # need OpenFF version of unit for Interchange positions for some reason
 from openff.interchange import Interchange
 
-from openmm import Integrator
-from openmm.openmm import Force
+from openmm import Integrator, LangevinMiddleIntegrator
+from openmm.openmm import Force, MonteCarloBarostat
 from openmm.app import Simulation
 from openmm.app import PDBReporter, DCDReporter, StateDataReporter, CheckpointReporter
 Reporter = Union[PDBReporter, DCDReporter, StateDataReporter, CheckpointReporter] # for clearer typehinting
@@ -156,9 +158,98 @@ def create_simulation(interchange : Interchange, integrator : Integrator, forces
 
     return simulation
 
-def run_simulation(simulation : Simulation, output_folder : Path, output_name : str, sim_params : SimulationParameters) -> Path:
+def create_simulation_NVT(interchange : Interchange, sim_params : SimulationParameters) -> Simulation:
+    '''Initialize and OpenMM Simulation with a Langevin Middle integrator thermostat but NO barostat'''
+    integrator  = LangevinMiddleIntegrator(sim_params.temperature, sim_params.friction_coeff, sim_params.timestep)
+
+    sim = create_simulation(interchange, integrator)
+    LOGGER.info('Created NVT Simulation with Langevin Thermostat')
+    return sim
+
+def create_simulation_NPT(interchange : Interchange, sim_params : SimulationParameters) -> Simulation:
+    '''Initialize and OpenMM Simulation with a Langevin Middle integrator thermostat and Monte Carlo barostat'''
+    integrator  = LangevinMiddleIntegrator(sim_params.temperature, sim_params.friction_coeff, sim_params.timestep)
+    barostat    = MonteCarloBarostat(sim_params.pressure, sim_params.temperature, sim_params.barostat_freq)
+    
+    sim = create_simulation(interchange, integrator, forces=[barostat])
+    LOGGER.info('Created NPT Simulation with Langevin Thermostat and Monte Carlo Barostat')
+    return sim
+
+ENSEMBLE_FACTORIES = {
+    'NVT' : create_simulation_NVT,
+    'NPT' : create_simulation_NPT
+}
+
+# functions for setting up files for accumulating simulation and trajectory data
+def prepare_simulation_paths(output_folder : Path, output_name : str, report_to_pdb : bool=False) -> SimulationPaths:
     '''Takes a Simulation object, performs energy minimization, and runs simulation for specified number of time steps
     Recording PBD frames and the specified property data to CSV at the specified frequency'''
+    # creating paths to requisite output files
+    prefix = f'{output_name}{"_" if output_name else ""}'
+    sim_paths_out = output_folder / f'{prefix}sim_paths.json'
+    sim_paths = SimulationPaths(
+        sim_params=output_folder / f'{prefix}sim_parameters.json',
+        trajectory=output_folder / f'{prefix}traj.{"pdb" if report_to_pdb else "dcd"}',
+        state_data=output_folder / f'{prefix}state_data.csv',
+        checkpoint=output_folder / f'{prefix}checkpoint.chk',
+    )
+    sim_paths.to_file(sim_paths_out)
+    LOGGER.info(f'Created simulation files at {sim_paths_out}')
+
+    return sim_paths
+
+def prepare_simulation_reporters(sim_paths : SimulationPaths, sim_params : SimulationParameters) ->  tuple[Reporter]:
+    '''Takes a Simulation object, performs energy minimization, and runs simulation for specified number of time steps
+    Recording PBD frames and the specified property data to CSV at the specified frequency'''
+    TRAJ_REPORTERS = { # index output formats of reporters by file extension
+        '.dcd' : DCDReporter,
+        '.pdb' : PDBReporter
+    }
+
+    # for saving pdb frames and reporting state/energy data - NOTE : all file paths must be stringified for OpenMM
+    TrajReporter = TRAJ_REPORTERS[sim_paths.trajectory.suffix] # look up reporter based on the desired trajectory output file format
+    
+    traj_rep  = TrajReporter(file=str(sim_paths.trajectory), reportInterval=sim_params.record_freq)  # save frames at the specified interval
+    check_rep = CheckpointReporter(str(sim_paths.checkpoint), reportInterval=sim_params.record_freq)
+    state_rep = StateDataReporter(str(sim_paths.state_data), reportInterval=sim_params.record_freq, **sim_params.reported_state_data)
+
+    return (traj_rep, check_rep, state_rep)
+
+def config_simulation(simulation : Simulation, reporters : Iterable[Reporter], checkpoint_path : Optional[Path]=None) -> None:
+    '''Takes a Simulation object, adds data Reporters, saves an initial checkpoint, and performs energy minimization'''
+    for rep in reporters:
+        simulation.reporters.append(rep) # add any desired reporters to simulation for tracking
+
+    if checkpoint_path is not None:
+        LOGGER.info(f'Saving simulation checkpoint at {checkpoint_path}')
+        simulation.saveCheckpoint(str(checkpoint_path)) # save initial minimal state to simplify reloading process
+
+# Functions for actually running simulations
+def run_simulation(interchange : Interchange, sim_params : SimulationParameters, output_folder : Path, output_name : str, ensemble : str='NPT') -> None:
+    '''
+    Initializes an OpenMM simulation from a SMIRNOFF Interchange in the desired ensemble
+    Creates relevant simulation files, generates Reporters for state, checkpoint, and trajectory data,
+     performs energy minimization, then integrates the trajectory for the desired number of steps
+    '''
+    sim_factory = ENSEMBLE_FACTORIES[ensemble.upper()] # case-insensitive check for simulation creators for the desired ensemble
+    simulation = sim_factory(interchange, sim_params=sim_params)
+
+    sim_paths = prepare_simulation_paths(output_folder, output_name, report_to_pdb=sim_params.report_to_pdb)
+    reporters = prepare_simulation_reporters(sim_paths, sim_params)
+    sim_params.to_file(sim_paths.sim_params) # TOSELF : this is not a parameters checkpoint file UPDATE, but rather the initial CREATION of the checkpoint file
+    config_simulation(simulation, reporters, checkpoint_path=sim_paths.checkpoint)
+
+    LOGGER.info('Performing energy minimization')
+    simulation.minimizeEnergy()
+
+    LOGGER.info(f'Integrating {sim_params.total_time} OpenMM sim at {sim_params.temperature} and {sim_params.pressure} for {sim_params.num_steps} steps')
+    simulation.step(sim_params.num_steps)
+
+def run_simulation_legacy(simulation : Simulation, output_folder : Path, output_name : str, sim_params : SimulationParameters) -> Path:
+    '''Takes a Simulation object, performs energy minimization, and runs simulation for specified number of time steps
+    Recording PBD frames and the specified property data to CSV at the specified frequency
+    
+    Old implementation, Kept in for backwards-compatibility and debug reasons'''
     # creating paths to requisite output files
     prefix = f'{output_name}{"_" if output_name else ""}'
     sim_paths_out = output_folder / f'{prefix}sim_paths.json'
@@ -169,7 +260,7 @@ def run_simulation(simulation : Simulation, output_folder : Path, output_name : 
         checkpoint=output_folder / f'{prefix}checkpoint.chk',
     )
     sim_paths.to_file(sim_paths_out)
-    sim_params.to_file(sim_paths.sim_params) 
+    sim_params.to_file(sim_paths.sim_params) # TOSELF : this is not a parameters checkpoint file UPDATE, but rather the initial CREATION of the checkpoint file
 
     # for saving pdb frames and reporting state/energy data - NOTE : all file paths must be stringified for OpenMM
     check_rep = CheckpointReporter(str(sim_paths.checkpoint), reportInterval=sim_params.record_freq)
@@ -190,4 +281,3 @@ def run_simulation(simulation : Simulation, output_folder : Path, output_name : 
     simulation.step(sim_params.num_steps)
 
     return sim_paths_out
-    
