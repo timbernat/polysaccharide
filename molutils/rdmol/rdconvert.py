@@ -1,7 +1,16 @@
+'''For conversion of RDMols back and forth between different format encodings - often imbues a desired side effect (such as 2D-projection)'''
+
+# Typing
+from typing import Union
+from .rdtypes import *
+
+# Subclassing
+import copy
 from abc import ABC, abstractmethod, abstractproperty
 
+# Cheminformatics
 from rdkit import Chem
-from .rdtypes import *
+from . import rdprops
 
 
 class RDConverter(ABC):
@@ -53,3 +62,23 @@ RDCONVERTER_REGISTRY = { # keep easily accessible record of all available conver
     child.TAG : child()
         for child in RDConverter.__subclasses__()
 }
+
+# functons for applying various converters to RDMols
+def flattened_rdmol(rdmol : RDMol, converter : Union[str, RDConverter]='SMARTS') -> RDMol:
+    '''Returns a flattened version of an RDKit molecule for 2D representation'''
+    if isinstance(converter, str): # simplifies external function calls (don't need to be aware of underlying RDConverter class explicitly)
+        converter = RDCONVERTER_REGISTRY[converter] # perform lookup if only name is passed
+
+    orig_rdmol = copy.deepcopy(rdmol) # create copy to avoid mutating original
+    rdprops.assign_ordered_atom_map_nums(orig_rdmol) # need atom map numbers to preserve positional mapping in SMARTS
+
+    flat_mol = converter.convert(orig_rdmol) # apply convert for format interchange
+    if set(atom.GetAtomMapNum() for atom in flat_mol.GetAtoms()) == {0}: # hacky workaround for InChI and other formats which discard atom map number - TODO : fix this terriblenesss
+        rdprops.assign_ordered_atom_map_nums(flat_mol)
+
+    rdprops.copy_rd_props(to_rdobj=flat_mol, from_rdobj=orig_rdmol) # clone molecular properties
+    for new_atom in flat_mol.GetAtoms():
+        rdprops.copy_rd_props(to_rdobj=new_atom, from_rdobj=orig_rdmol.GetAtomWithIdx(new_atom.GetAtomMapNum()))
+
+    del orig_rdmol # mark copy for garbage collection now that it has served its purpose
+    return flat_mol
