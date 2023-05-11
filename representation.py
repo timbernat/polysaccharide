@@ -4,7 +4,7 @@ from .logutils import timestamp_now, extract_time, ProcessLogHandler
 from .solvation.packmol import packmol_solvate_wrapper
 from .charging.averaging import get_averaged_residue_charges, write_lib_chgs_from_mono_data
 from .charging.application import load_matched_charged_molecule, unserialize_monomer_json
-from .simulation import SimulationPaths, SimulationParameters
+from .simulation import SimulationPaths, SimulationParameters, run_simulation
 from .analysis.trajectory import load_traj
 from .molutils.rdmol.rdcompare import compare_chgd_rdmols
 
@@ -38,9 +38,8 @@ from openff.interchange import Interchange
 from openff.toolkit.topology import Topology, Molecule
 from openff.toolkit.typing.engines.smirnoff.parameters import LibraryChargeHandler
 
-from openmm.openmm import MonteCarloBarostat
-from openmm import LangevinMiddleIntegrator
 from openmm.unit import angstrom, nanometer
+
 
 # Custom Exceptions
 class MissingStructureData(Exception):
@@ -743,17 +742,11 @@ class Polymer:
         LOGGER.info(f'Creating SMIRNOFF Interchange for "{self.mol_name}"')
         return Interchange.from_smirnoff(force_field=self.forcefield, topology=off_topology, charge_from_molecules=[self.offmol]) # package FF, topoplogy, and molecule charges together and ship out
         
-    def run_simulation_NPT(self, sim_params : simulation.SimulationParameters) -> Path:
-        '''Initialize and run an OpenMM simulation in the Isothermal-Isobaric ensemble with a predefined set of setup parameters'''
+    def run_simulation(self, sim_params : simulation.SimulationParameters, ensemble : str='NPT') -> None:
+        '''Run OpenMM simulation according to a set of predefined simulation parameters'''
         sim_folder = self.make_sim_dir()
-
         interchange = self.interchange(sim_params.charge_method)
-        integrator  = LangevinMiddleIntegrator(sim_params.temperature, sim_params.friction_coeff, sim_params.timestep)
-        barostat    = MonteCarloBarostat(sim_params.pressure, sim_params.temperature, sim_params.barostat_freq)
-        sim         = simulation.create_simulation(interchange, integrator, forces=[barostat])
-
-        sim_paths = simulation.run_simulation(sim, output_folder=sim_folder, output_name=self.mol_name, sim_params=sim_params) # run simulation and record paths to output files
-        return sim_folder
+        run_simulation(interchange, sim_params=sim_params, output_folder=sim_folder, output_name=self.mol_name, ensemble=ensemble)
 
     def load_sim_paths_and_params(self, sim_dir : Path=None) -> tuple[SimulationPaths, SimulationParameters]:
         '''Takes a path to a simulation directory and returns the associated simulation file paths and parameters
