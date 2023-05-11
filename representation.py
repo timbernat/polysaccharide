@@ -9,13 +9,14 @@ from .analysis.trajectory import load_traj
 from .molutils.rdmol.rdcompare import compare_chgd_rdmols
 
 # Typing and Subclassing
+from typing import Any, Callable, ClassVar, Iterable, Optional, TypeAlias, Union
+from mdtraj import Trajectory
+
 from .charging.application import MolCharger
 from .solvation.solvent import Solvent
 from .extratypes import SubstructSummary, Figure, Axes, ndarray
 from .charging.types import ResidueChargeMap
-
-from typing import Any, Callable, ClassVar, Iterable, Optional, Union
-from mdtraj import Trajectory
+SimDirFilter : TypeAlias = Callable[[SimulationPaths, SimulationParameters], bool]
 
 # File I/O
 import copy
@@ -698,18 +699,6 @@ class Polymer:
         return [sim_dir for sim_dir in self.MD.iterdir()]
     
     @property
-    def simulation_paths(self):
-        '''Dict of all extant simulation dirs and their internal path reference files'''
-        sim_paths = {}
-        for sim_dir in self.completed_sims:
-            try:
-                sim_paths[sim_dir] = next(sim_dir.glob('*_paths.json'))
-            except StopIteration:
-                sim_paths[sim_dir] = None
-        
-        return sim_paths
-    
-    @property
     def chrono_sims(self) -> list[Path]:
         '''Return paths of all extant simulation subdirectories in chronological order of creation'''
         return sorted(self.completed_sims, key=lambda path : extract_time(path.stem))
@@ -723,6 +712,18 @@ class Polymer:
     def newest_sim_dir(self) -> Path:
         '''Return the most recent simulation subdir'''
         return self.chrono_sims[-1]
+    
+    @property
+    def simulation_paths(self):
+        '''Dict of all extant simulation dirs and their internal path reference files'''
+        sim_paths = {}
+        for sim_dir in self.completed_sims:
+            try:
+                sim_paths[sim_dir] = next(sim_dir.glob('*_paths.json'))
+            except StopIteration:
+                sim_paths[sim_dir] = None
+        
+        return sim_paths
     
     def make_sim_dir(self, affix : Optional[str]='') -> Path:
         '''Create a new timestamped simulation results directory'''
@@ -760,6 +761,19 @@ class Polymer:
 
         return sim_paths, sim_params
 
+    def filter_sim_dirs(self, conditions : Union[SimDirFilter, Iterable[SimDirFilter]]) -> dict[Path, tuple[SimulationPaths, SimulationParameters]]:
+        '''Returns all simulation directories which meet some binary condition based on their simulation file paths and/or the parameters with which the simulation was ran'''
+        if not isinstance(conditions, Iterable):
+            conditions = [conditions] # handle the singleton case
+        
+        valid_sim_dirs = {}
+        for sim_dir in self.completed_sims:
+            sim_paths, sim_params = self.load_sim_paths_and_params(sim_dir)
+            if all(condition(sim_paths, sim_params) for condition in conditions):
+                valid_sim_dirs[sim_dir] = (sim_paths, sim_params)
+
+        return valid_sim_dirs
+    
     def load_traj(self, sim_dir : Path, **kwargs) -> Trajectory:
         '''Load a trajectory for a simulation directory'''
         sim_paths, sim_params = self.load_sim_paths_and_params(sim_dir)
@@ -795,10 +809,11 @@ def filter_factory_by_attr(attr_name : str, condition : Callable[[Any], bool]=bo
 
     return _filter
 
-identity     = lambda polymer : True # no filter, return all polymers (or conversely None if non-inclusive)
-has_sims     = filter_factory_by_attr(attr_name='completed_sims')
-has_monomers = filter_factory_by_attr(attr_name='has_monomer_data')
-AM1_sized    = filter_factory_by_attr(attr_name='n_atoms', condition=lambda n : 0 < n <= 300)
+identity      = lambda polymer : True # no filter, return all polymers (or conversely None if non-inclusive)
+has_sims      = filter_factory_by_attr(attr_name='completed_sims')
+has_monomers  = filter_factory_by_attr(attr_name='has_monomer_data')
+is_unsolvated = filter_factory_by_attr(attr_name='solvent', inclusive=False)
+is_AM1_sized  = filter_factory_by_attr(attr_name='n_atoms', condition=lambda n : 0 < n <= 300)
 # has_monomers = lambda polymer : polymer.has_monomer_data 
 # AM1_sized    = lambda polymer : 0 < polymer.n_atoms <= 300
 
@@ -837,7 +852,7 @@ class PolymerManager:
                 found_polymers.append(Polymer.from_file(checkpoint_file))
             except EOFError:
                 missing_chk_data.append(checkpoint_file)
-                # print(f'Missing checkpoint file info in {polymer}') # TODO : find better way to log this
+                LOGGER.error(f'Missing checkpoint file data in {checkpoint_file}') 
         self.polymers_list = found_polymers # avoiding direct append ensures no double-counting if run multiple times (starts with empty list each time)
 
         if return_missing:
