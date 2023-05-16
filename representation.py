@@ -14,7 +14,7 @@ from mdtraj import Trajectory
 
 from .charging.application import MolCharger
 from .solvation.solvent import Solvent
-from .extratypes import SubstructSummary, Figure, Axes, ndarray
+from .extratypes import SubstructSummary, Figure, Axes, ndarray, asiterable
 from .charging.types import ResidueChargeMap
 SimDirFilter : TypeAlias = Callable[[SimulationPaths, SimulationParameters], bool]
 
@@ -405,6 +405,7 @@ class Polymer:
         if not self.has_monomer_data_uncharged:
             raise MissingChargedMonomerData
 
+        LOGGER.info(f'Generating Force Field file with Library Charges for "{self.mol_name}"')
         ff_path = self.FF/f'{self.mol_name}.offxml' # path to output library charges
         forcefield, lib_chgs = write_lib_chgs_from_mono_data(self.monomer_data_charged, xml_src, output_path=ff_path)
 
@@ -414,7 +415,7 @@ class Polymer:
             LOGGER.info(f'Detected solvent "{self.solvent.name}", merged solvent and molecule force field')
 
         self.ff_file = ff_path # ensure change is reflected in directory info
-        LOGGER.info(f'Successfully generated forcefield file for "{self.mol_name}"')
+        LOGGER.info(f'Successfully generated forcefield file')
 
         if return_lib_chgs:
             return forcefield, lib_chgs
@@ -571,7 +572,7 @@ class Polymer:
 
     # TOSELF : need to explicitly call update_checkpoint (without decorator syntax) due to annoying internal namespace restrictions
     populate_pdb = update_checkpoint(_file_population_factory(file_name_affix='.pdb', subdir_name='structures', targ_attr='structure_file', desc='structure'))
-    populate_monomers= update_checkpoint(_file_population_factory(file_name_affix='.json', subdir_name='monomers', targ_attr='monomer_file', desc='monomer'))
+    populate_monomers = update_checkpoint(_file_population_factory(file_name_affix='.json', subdir_name='monomers', targ_attr='monomer_file', desc='monomer'))
 
     def populate_mol_files(self, struct_dir : Path, monomer_dir : Path=None) -> None:
         '''
@@ -635,6 +636,17 @@ class Polymer:
         LOGGER.info('Successfully converged on solvent packing')
 
         return solva_dir
+
+    def solvate_multi(self, solvents : Union[Solvent, Iterable[Solvent]], template_path : Path, dest_dir : Path=None, exclusion : float=None, precision : int=4) -> 'Polymer':
+        '''Create a clone of a Polymer and solvate it in a box defined by the polymer's bounding box + an exclusion buffer
+        Can solvate with either one or multiple solvents'''
+        solvents = asiterable(solvents)
+        if not isinstance(solvents, Iterable):
+            solvents = [solvents]
+
+        for solvent in solvents:
+            if solvent is not None: # handle the case where a null solvent is passed (technically a valid Solvent for typing reasons)
+                solva_dir = self.solvate(solvent=solvent, template_path=template_path, dest_dir=dest_dir, exclusion=exclusion, precision=precision)
 
     @update_checkpoint
     def solvate_legacy(self, solvent : Solvent, template_path : Path, exclusion : float=None, precision : int=4) ->  'Polymer':
@@ -734,19 +746,20 @@ class Polymer:
 
         return sim_dir
     
-    def interchange(self, charge_method : str):
+    def interchange(self, charge_method : str, periodic : bool=True):
         '''Create an Interchange object for a SMIRNOFF force field using internal structural files'''
         off_topology = self.off_topology_matched() # self.off_topology
-        off_topology.box_vectors = self.box_vectors.in_units_of(nanometer) # set box vector to allow for periodic simulation (will be non-periodic if polymer box vectors are unset i.e. NoneType)
+        if periodic:
+            off_topology.box_vectors = self.box_vectors.in_units_of(nanometer) # set box vector to allow for periodic simulation (will be non-periodic if polymer box vectors are unset i.e. NoneType)
         self.assign_charges_by_lookup(charge_method) # assign relevant charges prior to returning molecule
   
         LOGGER.info(f'Creating SMIRNOFF Interchange for "{self.mol_name}"')
         return Interchange.from_smirnoff(force_field=self.forcefield, topology=off_topology, charge_from_molecules=[self.offmol]) # package FF, topoplogy, and molecule charges together and ship out
         
-    def run_simulation(self, sim_params : simulation.SimulationParameters, ensemble : str='NPT') -> None:
+    def run_simulation(self, sim_params : simulation.SimulationParameters, ensemble : str='NPT', periodic : bool=True) -> None:
         '''Run OpenMM simulation according to a set of predefined simulation parameters'''
         sim_folder = self.make_sim_dir()
-        interchange = self.interchange(sim_params.charge_method)
+        interchange = self.interchange(sim_params.charge_method, periodic=periodic)
         run_simulation(interchange, sim_params=sim_params, output_folder=sim_folder, output_name=self.mol_name, ensemble=ensemble)
 
     def load_sim_paths_and_params(self, sim_dir : Path=None) -> tuple[SimulationPaths, SimulationParameters]:
@@ -809,11 +822,14 @@ def filter_factory_by_attr(attr_name : str, condition : Callable[[Any], bool]=bo
 
     return _filter
 
-identity      = lambda polymer : True # no filter, return all polymers (or conversely None if non-inclusive)
-has_sims      = filter_factory_by_attr(attr_name='completed_sims')
-has_monomers  = filter_factory_by_attr(attr_name='has_monomer_data')
-is_unsolvated = filter_factory_by_attr(attr_name='solvent', inclusive=False)
-is_AM1_sized  = filter_factory_by_attr(attr_name='n_atoms', condition=lambda n : 0 < n <= 300)
+identity          = lambda polymer : True # no filter, return all polymers (or conversely None if non-inclusive)
+has_sims          = filter_factory_by_attr('completed_sims')
+has_monomers      = filter_factory_by_attr('has_monomer_data')
+has_monomers_chgd = filter_factory_by_attr('has_monomer_data_charged')
+is_charged        = filter_factory_by_attr('charges')
+is_uncharged      = filter_factory_by_attr('charges', inclusive=False)
+is_unsolvated     = filter_factory_by_attr('solvent', inclusive=False)
+is_AM1_sized      = filter_factory_by_attr('n_atoms', condition=lambda n : 0 < n <= 300)
 # has_monomers = lambda polymer : polymer.has_monomer_data 
 # AM1_sized    = lambda polymer : 0 < polymer.n_atoms <= 300
 
