@@ -1,4 +1,4 @@
-from typing import Any, Union
+from typing import Any, Iterable, Union
 from numpy.typing import ArrayLike
 from numpy import number, ndarray
 
@@ -28,12 +28,17 @@ AtomIDMap = dict[str, dict[int, tuple[int, str]]]
 ChargeMap = dict[int, float] 
 ResidueChargeMap = dict[str, ChargeMap]
 
+def asiterable(arg_val : Union[Any, Iterable[Any]]) -> Iterable[Any]:
+	'''Permits functions expecting iterable arguments to accept singular values'''
+	if not isinstance(arg_val, Iterable):
+		arg_val = tuple(arg_val)
+	return arg_val
 
 # Typechecking functions
 def isnumeric(var: Any) -> bool:
-  '''Check if a variable is numerical'''
-  return isinstance(var, Numeric.__args__)
+	'''Check if a variable is numerical'''
+	return isinstance(var, Numeric.__args__)
 
 def isarraylike(var: Any) -> bool:
-  '''Check if a variable is numerical'''
-  return isinstance(var, ArrayLike.__args__)
+	'''Check if a variable is numerical'''
+	return isinstance(var, ArrayLike.__args__)
