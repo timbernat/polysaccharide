@@ -21,6 +21,11 @@ def autocorrelate(series : np.ndarray) -> np.ndarray:
 
     return autocorr
 
+def RMSE(pred : np.ndarray, obs : np.ndarray) -> float:
+    '''Computes root-mean squared error between predicted and observed sets of values'''
+    sq_err = (obs - pred)**2
+    return np.sqrt(sq_err.mean())
+
 def equil_loc(series : np.ndarray) -> int:
     '''Estimate the index in a series after which equilibration has occurred'''
     if not isinstance(series, np.ndarray):
