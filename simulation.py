@@ -6,6 +6,7 @@ import re
 import numpy as np
 
 # Typing and subclassing
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional, Union
 from .filetree import JSONSerializable, JSONifiable
@@ -18,9 +19,10 @@ LOGGER = logging.getLogger(__name__)
 from openff.units import unit as offunit # need OpenFF version of unit for Interchange positions for some reason
 from openff.interchange import Interchange
 
-from openmm import Integrator, LangevinMiddleIntegrator
+from openmm import Integrator, VerletIntegrator, LangevinMiddleIntegrator
 from openmm.openmm import Force, MonteCarloBarostat
 from openmm.app import Simulation
+
 from openmm.app import PDBReporter, DCDReporter, StateDataReporter, CheckpointReporter
 Reporter = Union[PDBReporter, DCDReporter, StateDataReporter, CheckpointReporter] # for clearer typehinting
 
@@ -158,24 +160,33 @@ def create_simulation(interchange : Interchange, integrator : Integrator, forces
 
     return simulation
 
-def create_simulation_NVT(interchange : Interchange, sim_params : SimulationParameters) -> Simulation:
+def create_simulation_NVE(interchange : Interchange, sim_params : SimulationParameters) -> Simulation:
     '''Initialize and OpenMM Simulation with a Langevin Middle integrator thermostat but NO barostat'''
-    integrator  = LangevinMiddleIntegrator(sim_params.temperature, sim_params.friction_coeff, sim_params.timestep)
+    integrator  = VerletIntegrator(sim_params.timestep)
+    sim = create_simulation(interchange, integrator)
+    LOGGER.info('Created NVE Simulation with Verlet Velocity Integrator')
+    
+    return sim
 
+def create_simulation_NVT(interchange : Interchange, sim_params : SimulationParameters) -> Simulation:
+    '''Initialize an OpenMM Simulation with a Langevin Middle integrator thermostat but NO barostat'''
+    integrator  = LangevinMiddleIntegrator(sim_params.temperature, sim_params.friction_coeff, sim_params.timestep)
     sim = create_simulation(interchange, integrator)
     LOGGER.info('Created NVT Simulation with Langevin Thermostat')
+    
     return sim
 
 def create_simulation_NPT(interchange : Interchange, sim_params : SimulationParameters) -> Simulation:
     '''Initialize and OpenMM Simulation with a Langevin Middle integrator thermostat and Monte Carlo barostat'''
     integrator  = LangevinMiddleIntegrator(sim_params.temperature, sim_params.friction_coeff, sim_params.timestep)
     barostat    = MonteCarloBarostat(sim_params.pressure, sim_params.temperature, sim_params.barostat_freq)
-    
     sim = create_simulation(interchange, integrator, forces=[barostat])
     LOGGER.info('Created NPT Simulation with Langevin Thermostat and Monte Carlo Barostat')
+    
     return sim
 
 ENSEMBLE_FACTORIES = {
+    'NVE' : create_simulation_NVE,
     'NVT' : create_simulation_NVT,
     'NPT' : create_simulation_NPT
 }
