@@ -1,10 +1,11 @@
 # Custom Imports
-from . import general, filetree, simulation
+from . import extratypes, general, filetree, simulation
 from .logutils import timestamp_now, extract_time, ProcessLogHandler
 from .solvation.packmol import packmol_solvate_wrapper
 from .charging.averaging import get_averaged_residue_charges, write_lib_chgs_from_mono_data
 from .charging.application import load_matched_charged_molecule, unserialize_monomer_json
-from .simulation import SimulationPaths, SimulationParameters, run_simulation
+from .simulation.records import SimulationPaths, SimulationParameters
+from .simulation.execution import run_simulation
 from .analysis.trajectory import load_traj
 from .molutils.rdmol.rdcompare import compare_chgd_rdmols
 
@@ -14,7 +15,7 @@ from mdtraj import Trajectory
 
 from .charging.application import MolCharger
 from .solvation.solvent import Solvent
-from .extratypes import SubstructSummary, Figure, Axes, ndarray, asiterable
+from .extratypes import SubstructSummary, Figure, Axes, ndarray
 from .charging.types import ResidueChargeMap
 SimDirFilter : TypeAlias = Callable[[SimulationPaths, SimulationParameters], bool]
 
@@ -101,11 +102,11 @@ class Polymer:
         self.charges : dict[str, ndarray[float]] = {}
         self.charge_method : str = None
         
-        self.ff_file              : Optional[Path]   = None # .OFFXML
-        self.monomer_file         : Optional[Path]   = None # .JSON
-        self.monomer_file_chgd    : Optional[Path]   = None # .JSON
-        self.structure_file       : Optional[Path]   = None # .PDB
-        self.structure_files_chgd : dict[str, Path]  = {} # dict of .SDF
+        self.ff_file              : Optional[Path]  = None # .OFFXML
+        self.monomer_file         : Optional[Path]  = None # .JSON
+        self.monomer_file_chgd    : Optional[Path]  = None # .JSON
+        self.structure_file       : Optional[Path]  = None # .PDB
+        self.structure_files_chgd : dict[str, Path] = {} # dict of .SDF
 
         # "Private" attributes
         self._off_topology : Topology = None
@@ -445,7 +446,7 @@ class Polymer:
     @update_checkpoint
     def assign_charges_by_lookup(self, charge_method : str) -> None:
         '''Choose which registered charges should be applied to the cached Molecule by key lookup'''
-        LOGGER.info(f'Assigning charges from {charge_method} to {self.mol_name}\'s OpenFF Molecule')
+        LOGGER.info(f'Assigning precomputed {charge_method} charges to {self.mol_name}')
         self.offmol.partial_charges = self.charges[charge_method] # NOTE : explicitly using property version of offmol (i.e. not _offmol) in case Molecule isn't yet instantiated
         self.charge_method = charge_method 
     
@@ -587,8 +588,8 @@ class Polymer:
 
 # SOLVATION
     # doesn't need "update_checkpoint" decorator, as no own attrs are being updated
-    def solvate(self, solvent : Solvent, template_path : Path, dest_dir : Path=None, exclusion : float=None, precision : int=4) -> 'Polymer':
-        '''Create a clone of a Polymer and solvate it in a box defined by the polymer's bounding box + an exclusion buffer'''
+    def _solvate(self, solvent : Solvent, template_path : Path, dest_dir : Path=None, exclusion : float=None, precision : int=4) -> None:
+        '''Internal implementation for solvating with a single solvent via cloning and structure/Solvent reassignment'''
         if not self.has_structure_data:
             raise MissingStructureData
         
@@ -635,68 +636,12 @@ class Polymer:
         solva_dir.to_file() # ensure checkpoint file is created for newly solvated directory
         LOGGER.info('Successfully converged on solvent packing')
 
-        return solva_dir
-
-    def solvate_multi(self, solvents : Union[Solvent, Iterable[Solvent]], template_path : Path, dest_dir : Path=None, exclusion : float=None, precision : int=4) -> 'Polymer':
-        '''Create a clone of a Polymer and solvate it in a box defined by the polymer's bounding box + an exclusion buffer
-        Can solvate with either one or multiple solvents'''
-        solvents = asiterable(solvents)
-        if not isinstance(solvents, Iterable):
-            solvents = [solvents]
-
-        for solvent in solvents:
+    def solvate(self, solvents : Union[Solvent, Iterable[Solvent]], template_path : Path, dest_dir : Path=None, exclusion : float=None, precision : int=4) -> 'Polymer':
+        '''Create a clone of a Polymer and solvate it in a box defined by the polymer's bounding box + an exclusion buffer. Can solvate with one or more solvents'''
+        for solvent in extratypes.asiterable(solvents):
             if solvent is not None: # handle the case where a null solvent is passed (technically a valid Solvent for typing reasons)
-                solva_dir = self.solvate(solvent=solvent, template_path=template_path, dest_dir=dest_dir, exclusion=exclusion, precision=precision)
+                self._solvate(solvent=solvent, template_path=template_path, dest_dir=dest_dir, exclusion=exclusion, precision=precision)
 
-    @update_checkpoint
-    def solvate_legacy(self, solvent : Solvent, template_path : Path, exclusion : float=None, precision : int=4) ->  'Polymer':
-        '''Applies packmol solvation routine to an extant Polymer
-        This is the original implementation of solvation, kept for debug reasons'''
-        if not self.has_structure_data:
-            raise MissingStructureData
-        
-        if self.solvent is not None:
-            raise AlreadySolvatedError
-
-        if exclusion is None:
-            exclusion = self.exclusion # default to same exclusion as parent
-
-        solvated_name = f'{self.mol_name}_solv_{solvent.name}'
-        solva_dir = Polymer(parent_dir=self.parent_dir, mol_name=solvated_name)
-        solva_dir.base_mol_name = self.mol_name # TOSELF : temporary, ensure that a solvated mol is stil keyable by the original molecule name
-
-        solva_dir.exclusion = exclusion
-        box_vectors = self.mol_bbox + 2*exclusion # can't use either dirs "box_vectors" property directly, since the solvated dir has no structure file yet and the old dir may have different exclusion
-        V_box = general.product(box_vectors)
-
-        LOGGER.info(f'Creating copy of {self.mol_name}, now solvated in {solvent.name}')
-        solva_dir.structure_file = packmol_solvate_wrapper( # generate and point to solvated PDB structure
-            polymer_pdb = self.structure_file, 
-            solvent_pdb = solvent.structure_file, 
-            outdir      = solva_dir.structures, 
-            outname     = solvated_name, 
-            template_path = template_path,
-            N           = round(V_box * solvent.number_density),
-            box_dims    = box_vectors,
-            precision   = precision
-        )
-
-        if self.has_monomer_data:
-            solvated_mono_data = {**self.monomer_data_uncharged}           # note that this is explicitly UNCHARGED monomer data
-            for field, values in solvated_mono_data.items():     # this merge strategy ensures solvent data does not overwrite or append extraneous data
-                values.update(solvent.monomer_json_data[field])  # specifically, charges will not be written to an uncharged json (which would screw up graph match and load)
-
-            solva_mono_path = solva_dir.monomers/f'{solvated_name}.json'
-            with solva_mono_path.open('w') as solv_mono_file:
-                json.dump(solvated_mono_data, solv_mono_file, indent=4)
-            solva_dir.monomer_file = solva_mono_path
-
-        solva_dir.solvent = solvent # set this only AFTER solvated files have been created
-        solva_dir.to_file() # ensure checkpoint file is created for newly solvated directory
-        LOGGER.info('Successfully converged solvent packing')
-
-        return solva_dir
-    
 # SIMULATION
     def clean_sims(self):
         '''Get rid of any empty (i.e. failed) simulation folders'''
@@ -756,7 +701,7 @@ class Polymer:
         LOGGER.info(f'Creating SMIRNOFF Interchange for "{self.mol_name}"')
         return Interchange.from_smirnoff(force_field=self.forcefield, topology=off_topology, charge_from_molecules=[self.offmol]) # package FF, topoplogy, and molecule charges together and ship out
         
-    def run_simulation(self, sim_params : simulation.SimulationParameters, ensemble : str='NPT', periodic : bool=True) -> None:
+    def run_simulation(self, sim_params : SimulationParameters, ensemble : str='NPT', periodic : bool=True) -> None:
         '''Run OpenMM simulation according to a set of predefined simulation parameters'''
         sim_folder = self.make_sim_dir()
         interchange = self.interchange(sim_params.charge_method, periodic=periodic)
@@ -776,9 +721,7 @@ class Polymer:
 
     def filter_sim_dirs(self, conditions : Union[SimDirFilter, Iterable[SimDirFilter]]) -> dict[Path, tuple[SimulationPaths, SimulationParameters]]:
         '''Returns all simulation directories which meet some binary condition based on their simulation file paths and/or the parameters with which the simulation was ran'''
-        if not isinstance(conditions, Iterable):
-            conditions = [conditions] # handle the singleton case
-        
+        conditions = extratypes.asiterable(conditions)
         valid_sim_dirs = {}
         for sim_dir in self.completed_sims:
             sim_paths, sim_params = self.load_sim_paths_and_params(sim_dir)
@@ -830,6 +773,7 @@ is_charged        = filter_factory_by_attr('charges')
 is_uncharged      = filter_factory_by_attr('charges', inclusive=False)
 is_unsolvated     = filter_factory_by_attr('solvent', inclusive=False)
 is_AM1_sized      = filter_factory_by_attr('n_atoms', condition=lambda n : 0 < n <= 300)
+is_base           = lambda polymer : polymer.base_mol_name == polymer.mol_name
 # has_monomers = lambda polymer : polymer.has_monomer_data 
 # AM1_sized    = lambda polymer : 0 < polymer.n_atoms <= 300
 
@@ -930,9 +874,7 @@ class PolymerManager:
 
     def filtered_by(self, filters : Union[MolFilter, Iterable[MolFilter]]) -> dict[str, Polymer]:
         '''Return name-keyed dict of all Polymers in collection which meet all of a set of filtering conditions'''
-        if not isinstance(filters, Iterable):
-            filters = [filters] # handle the singleton case
-
+        filters = extratypes.asiterable(filters)
         return {
             polymer.mol_name : polymer
                 for polymer in self.polymers_list
@@ -952,18 +894,12 @@ class PolymerManager:
             polymer.populate_mol_files(struct_dir=struct_dir, monomer_dir=monomer_dir)
             LOGGER.info('') # leave a line break between polymer entries to give some breathing room
 
-    @refresh_listed_dirs
+    @refresh_listed_dirs # TODO : reimplement with logging wrapper method
     def solvate_collection(self, solvents : Iterable[Solvent], template_path : Path, exclusion : float=None) -> None:
         '''Make solvated versions of all listed Polymers, according to a collection of solvents'''      
-        for solvent in solvents:
-            if solvent is None: # handle the case where a null solvent is passed (technically a valid Solvent for typing reasons)
-                continue
-
-            for polymer in self.polymers_list:
-                if (polymer.solvent is None): # don't double-solvate any already-solvated systems
-                    solv_dir = polymer.solvate(solvent=solvent, template_path=template_path, exclusion=exclusion)
-                    LOGGER.info('') # leave a line break between polymer entries to give some breathing room
-                    self.polymers_list.append(solv_dir) # ultimately pointless, as this will be cleared and reloaded upon refresh. Still, nice to be complete :)
+        for polymer in self.polymers_list:
+            polymer.solvate(solvents=solvents, template_path=template_path, exclusion=exclusion)
+            LOGGER.info('') # leave a line break between polymer entries to give some breathing room
 
 # PURGING (DELETION) METHODS
     def purge_logs(self, really : bool=False) -> None: # NOTE : deliberately undecorated, as no Polymer reload is required
