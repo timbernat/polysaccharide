@@ -31,7 +31,7 @@ ResidueChargeMap = dict[str, ChargeMap]
 def asiterable(arg_val : Union[Any, Iterable[Any]]) -> Iterable[Any]:
 	'''Permits functions expecting iterable arguments to accept singular values'''
 	if not isinstance(arg_val, Iterable):
-		arg_val = tuple(arg_val)
+		arg_val = (arg_val,) # turn into single-item tuple (better for memory)
 	return arg_val
 
 # Typechecking functions
