@@ -15,8 +15,8 @@ from . import rdprops
 
 class RDConverter(ABC):
     '''For converting an existing RDKit Molecule to and from a particular format to gain new properties'''
-    @classmethod
     @abstractproperty
+    @classmethod
     def TAG(cls):
         pass
 

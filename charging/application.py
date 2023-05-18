@@ -138,8 +138,8 @@ def unserialize_monomer_json(ser_jdict : dict[str, JSONSerializable]) -> dict[An
 # Molecule charging interface
 class MolCharger(ABC):
     '''Base interface for defining various methods of generating and storing atomic partial charges'''
-    @classmethod
     @abstractproperty
+    @classmethod
     def METHOD_NAME(cls):
         '''For setting the name of the method as a class attribute in child classes'''
         pass
