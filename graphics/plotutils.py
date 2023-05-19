@@ -33,10 +33,10 @@ def presize_subplots(nrows : int, ncols : int, scale : float=15.0, elongation : 
     aspect = (nrows / ncols) * elongation
     return plt.subplots(nrows, ncols, figsize=(scale, aspect*scale))
 
-def plot_df_props(x_dframe : DataFrame, y_dframe : DataFrame, nrows : int=None, ncols : int=None, **plot_kwargs) -> tuple[plt.Figure, plt.Axes]:
+def plot_df_props(x_dframe : DataFrame, y_dframe : DataFrame, df_label : Optional[str]=None, nrows : int=None, ncols : int=None, **plot_kwargs) -> tuple[plt.Figure, plt.Axes]:
     '''Takes a DataFrame populated with polymer time series property data and generates sequential plots'''
     num_series = len(y_dframe.columns)
-    if (nrows is None) and (ncols is None): # TODO : deprecate this terribleness in favor of smart axis sizing to aspect ratio
+    if (nrows is None) and (ncols is None): # TODO : deprecate this terribleness in favor of smart axis sizing to aspect ratio, move to presize_subplots()
         nrows = 1
         ncols = num_series
     if (nrows is None):
@@ -50,7 +50,7 @@ def plot_df_props(x_dframe : DataFrame, y_dframe : DataFrame, nrows : int=None, 
         ax = np.array([ax]) # convert singleton subplots into arrays so that they don;t break when attempting to be flattened
 
     for curr_ax, (name, y_dframe) in zip(ax.flatten(), y_dframe.items()):
-        curr_ax.plot(x_dframe, y_dframe)
+        curr_ax.plot(x_dframe, y_dframe, label=df_label)
         curr_ax.set_xlabel(x_dframe.columns[0])
         curr_ax.set_ylabel(name)
 
