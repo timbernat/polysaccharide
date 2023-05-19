@@ -25,13 +25,3 @@ def RMSE(pred : np.ndarray, obs : np.ndarray) -> float:
     '''Computes root-mean squared error between predicted and observed sets of values'''
     sq_err = (obs - pred)**2
     return np.sqrt(sq_err.mean())
-
-def equil_loc(series : np.ndarray) -> int:
-    '''Estimate the index in a series after which equilibration has occurred'''
-    if not isinstance(series, np.ndarray):
-        series = np.array(series)
-
-    algo = rpt.Binseg(model='l2').fit(series)
-    change_times = algo.predict(n_bkps=1)
-
-    return change_times[0]
