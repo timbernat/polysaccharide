@@ -27,12 +27,8 @@ def load_traj(traj_path : Path, topo_path : Path, sample_interval : int=1, remov
 
 # Data output functions (mediated via DataFrames)
 def acquire_rdfs(traj : mdt.Trajectory, max_rad : Quantity=1*nanometer) -> pd.DataFrame:
-    '''
-    Takes a Trajectory and a Dataframe and writes columns to the DataFrame for all possible pairwise Radial Distribution Functions,
-    along with the radii sampled up to the specified maximum radius (must have units!)
-    
-    Optionally, can also return Figure and Axes with the RDFs plotted
-    '''
+    '''Takes a Trajectory and produces a DataFrame for all possible pairwise Radial Distribution Functions,
+    along with the radii sampled up to the specified maximum radius (must have units!)'''
     if not hasunits(max_rad): 
         raise MissingUnitsError
     max_rad = max_rad.in_units_of(nanometer) # assert that distances will be measured in nm
@@ -76,10 +72,10 @@ def _dframe_splitter_factory(regex : str):
     based on a regular expression applied to the name of the cdata columns'''
     def dframe_to_plot_data(dframe : pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         '''Takes a DataFrame populated with RDF data and unpacks it into x and y data and labels for plotting and calculations'''
-        radii = dframe.filter(regex=regex)
-        rdfs = dframe[[label for label in dframe.columns if label != radii.columns[0]]] # index props with all non-time point columns
+        x_data = dframe.filter(regex=regex)
+        y_data = dframe[[label for label in dframe.columns if label != x_data.columns[0]]] # index props with all non-time point columns
 
-        return radii, rdfs
+        return x_data, y_data
     return dframe_to_plot_data
 
 rdfs_to_plot_data  = _dframe_splitter_factory(regex='Radius')
