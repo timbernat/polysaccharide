@@ -1,8 +1,7 @@
 # Generic Imports
-from datetime import datetime
-
 from functools import reduce
 from operator import mul
+from copy import deepcopy
 
 # Typing and Subclassing
 from typing import Any, Callable, Iterable, Optional, Union
@@ -30,13 +29,29 @@ for case, idx in _greek_start_idxs.items():
             for i, letter_name in enumerate(greek_letter_names)
     }
 
-# Missing should-be builtins
+# Math
 def product(container : Iterable):
     '''Analogous to builtin sum()'''
     return reduce(mul, container)
 
-# Data containers
-def _modify_dict(path_dict : dict[Any, Any], modifier_fn : Callable[[Any, Any], tuple[Any, bool]]) -> None:
+# Functional operations and decorators
+def optional_in_place(funct : Callable[[Any, Any], None]) -> Callable[[Any, Any], Optional[Any]]:
+    '''Decorator function for allowing in-place (writeable) functions which modify object attributes
+    to be not performed in-place (i.e. read-only), specified by a boolean flag'''
+    def in_place_wrapper(obj : Any, *args, in_place : bool=False, **kwargs) -> Optional[Any]: # read-only by default
+        '''If not in-place, create a clone on which the method is executed'''
+        if in_place:
+            funct(obj, *args, **kwargs) # default call to writeable method - implicitly returns None
+        else:
+            copy_obj = deepcopy(obj) # clone object to avoid modifying original
+            funct(copy_obj, *args, **kwargs) 
+            return copy_obj # return the new object
+    return in_place_wrapper
+
+
+# Data containers / data structures
+@optional_in_place
+def modify_dict(path_dict : dict[Any, Any], modifier_fn : Callable[[Any, Any], tuple[Any, bool]]) -> None:
     '''Recursively modifies all values in a dict in-place according to some function'''
     for key, val in path_dict.items():
         if isinstance(val, dict): # recursive call if sub-values are also dicts with Paths
@@ -44,17 +59,6 @@ def _modify_dict(path_dict : dict[Any, Any], modifier_fn : Callable[[Any, Any], 
         else:
             path_dict[key] = modifier_fn(key, val) 
     
-def modify_dict(path_dict : dict[Any, Any], modifier_fn : Callable[[Any, Any], Any], in_place : bool=False) -> Optional[dict[Any, Any]]:
-    '''Recursively modifies all Path-like values in a dict according to some function
-    Can specify whether to modify in-place or return a modified copy to avoid overwrites'''
-    if in_place:
-        _modify_dict(path_dict, modifier_fn=modifier_fn) # implcitly returns None
-    else:
-        copy_dict = {k : v for k, v in path_dict.items()} # create a copy to avoid overwrites
-        _modify_dict(copy_dict, modifier_fn=modifier_fn) # modify the copy in-place
-        return copy_dict
-
-# Helper methods for builtin data structures
 def iter_len(itera : Iterable):
     '''
     Get size of an iterable object where ordinary len() call is invalid (namely a generator)
