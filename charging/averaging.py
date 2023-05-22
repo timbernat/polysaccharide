@@ -1,8 +1,12 @@
 # Generic imports
 from collections import defaultdict
 from pathlib import Path
+import numpy as np
+
+from ..general import optional_in_place
 
 # Typing and subclassing
+from typing import Any, Optional
 from .types import AtomIDMap, Accumulator, ResidueChargeMap
 from .residues import ChargedResidue
 
@@ -12,12 +16,17 @@ LOGGER = logging.getLogger(__name__)
 
 # MD and molecule manipulation
 from rdkit import Chem
+
+from openmm.unit import elementary_charge
+
 from openff.toolkit import ForceField
 from openff.toolkit.topology.molecule import Molecule
 from openff.toolkit.typing.engines.smirnoff.parameters import LibraryChargeHandler
 
+from .application import MolCharger
 
-# FUNCTIONS
+
+# function for determining library charges
 def find_repr_residues(mol : Molecule) -> dict[str, int]:
     '''Determine names and smallest residue numbers of all unique residues in charged molecule
     Used as representatives for generating labelled SMARTS strings '''
@@ -83,12 +92,41 @@ def get_averaged_charges(cmol : Molecule, monomer_data : dict[str, dict], distri
 
 def get_averaged_residue_charges(cmol : Molecule, monomer_data : dict[str, dict], distrib_mono_charges : bool=True, net_mono_charge : float=0.0) -> dict[str, ResidueChargeMap]:
     '''Wrapper for get_averaged_charges if only interested in substructure charge mapping (i.e. no surrounding Topology or charge redistribution info)'''
-    avgd_res, atom_id_mapping = get_averaged_charges(cmol, monomer_data=monomer_data)
+    avgd_res, atom_id_mapping = get_averaged_charges(
+        cmol,
+        monomer_data=monomer_data,
+        distrib_mono_charges=distrib_mono_charges,
+        net_mono_charge=net_mono_charge
+    )
+        
     return {
         avgd_res.residue_name : avgd_res.charges
             for avgd_res in avgd_res
     }
 
+@optional_in_place
+def apply_averaged_res_chgs(mol : Molecule, residue_charges : ResidueChargeMap) -> None:
+    '''Takes an OpenFF Molecule and a residue-wise map of averaged partial charges and applies the mapped charges to the Molecule'''
+    new_charges = [
+        residue_charges[atom.metadata['residue_name']][atom.metadata['substructure_id']]
+            for atom in mol.atoms
+    ]
+    new_charges = np.array(new_charges) * elementary_charge # convert to unit-ful array (otherwise assignment won't work)
+    mol.partial_charges = new_charges
+    
+class AveragingCharger(MolCharger):
+    '''Charger class for AM1-BCC-ELF10 exact charging'''
+    METHOD_NAME = 'ABE10_averaged'
+
+    def set_residue_charges(self, residue_charges : ResidueChargeMap):
+        '''Slightly janky workaround to get initialization and the _charge_molecule interface to have the right number of args'''
+        self.residue_charges = residue_charges
+
+    def _charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
+        return apply_averaged_res_chgs(uncharged_mol, self.residue_charges, in_place=False)
+
+
+# functions for outputting and recording charges
 def write_lib_chgs_from_mono_data(monomer_data : dict[str, dict], offxml_src : Path, output_path : Path) -> tuple[ForceField, list[LibraryChargeHandler]]: # TODO - refactor to support using ResidueChargeMap for charges
     '''Takes a monomer JSON file (must contain charges!) and a force field XML file and appends Library Charges based on the specified monomers. Outputs to specified output_path'''
     LOGGER.warning('Generating new forcefield XML with added Library Charges')

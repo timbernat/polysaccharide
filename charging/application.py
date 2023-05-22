@@ -2,8 +2,9 @@
 import numpy as np
 from ast import literal_eval
 
+from ..general import optional_in_place
+
 # File I/O
-from copy import copy
 from pathlib import Path
 
 # logging setup - will feed up to charging module parent logger
@@ -43,30 +44,6 @@ def generate_molecule_charges(mol : Molecule, toolkit : str='OpenEye Toolkit', p
         
     return charged_mol 
 
-def _apply_averaged_res_chgs(mol : Molecule, residue_charges : ResidueChargeMap) -> None:
-    '''Takes an OpenFF Molecule and a residue-wise map of averaged partial charges and applies the mapped charges to the Molecule'''
-    new_charges = [
-        residue_charges[atom.metadata['residue_name']][atom.metadata['substructure_id']]
-            for atom in mol.atoms
-    ]
-    new_charges = np.array(new_charges) * elementary_charge # convert to unit-ful array (otherwise assignment won't work)
-    mol.partial_charges = new_charges
-
-def apply_averaged_res_chgs(mol : Molecule, residue_charges : ResidueChargeMap, in_place : bool=False) -> Optional[Molecule]:
-    '''
-    Takes an OpenFF Molecule and a residue-wise map of averaged partial charges and applies the mapped charges to the Molecule
-
-    Can optionally specify whether to do charge assignment in-place (with "in_place" flag)
-    -- If in_place, will apply to the Molecule passed and return None
-    -- If not in_place, will create a copy, charge that, and return the resulting Molecule
-    '''
-    if in_place:
-        _apply_averaged_res_chgs(mol, residue_charges)
-    else:
-        new_mol = copy(mol) # create replica of Molecule to leave charges undisturbed
-        _apply_averaged_res_chgs(new_mol, residue_charges)
-        return new_mol
-    
 # File I/O for format-specific decoding and deserialization
 @dataclass
 class ChargingParameters(JSONifiable):
@@ -157,7 +134,6 @@ class MolCharger(ABC):
 
         return cmol
 
-
 class ABE10Charger(MolCharger):
     '''Charger class for AM1-BCC-ELF10 exact charging'''
     METHOD_NAME = 'ABE10_exact'
@@ -172,17 +148,6 @@ class EspalomaCharger(MolCharger):
 
     def _charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
         return generate_molecule_charges(uncharged_mol, toolkit='Espaloma Charge Toolkit', partial_charge_method='espaloma-am1bcc', force_match=True)
-    
-class ABE10AverageCharger(MolCharger):
-    '''Charger class for AM1-BCC-ELF10 exact charging'''
-    METHOD_NAME = 'ABE10_averaged'
-
-    def set_residue_charges(self, residue_charges : ResidueChargeMap):
-        '''Slightly janky workaround to get initialization and the _charge_molecule interface to have the right number of args'''
-        self.residue_charges = residue_charges
-
-    def _charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
-        return apply_averaged_res_chgs(uncharged_mol, self.residue_charges, in_place=False)
 
 CHARGER_REGISTRY = { # Keep a registry of all SDF charger implementations for convenience
     charger.METHOD_NAME : charger
