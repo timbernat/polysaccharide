@@ -2,8 +2,8 @@
 from . import extratypes, general, filetree, simulation
 from .logutils import timestamp_now, extract_time, ProcessLogHandler
 from .solvation.packmol import packmol_solvate_wrapper
-from .charging.averaging import get_averaged_residue_charges, write_lib_chgs_from_mono_data
-from .charging.application import load_matched_charged_molecule, unserialize_monomer_json
+from .charging.averaging import get_averaged_residue_charges, write_lib_chgs_from_mono_data, AveragingCharger
+from .charging.application import load_matched_charged_molecule, unserialize_monomer_json, CHARGER_REGISTRY, ChargingParameters
 from .simulation.records import SimulationPaths, SimulationParameters
 from .simulation.execution import run_simulation
 from .analysis.trajectory import load_traj
@@ -486,6 +486,7 @@ class Polymer:
         return load_matched_charged_molecule(self.structure_files_chgd[charge_method], assume_ordered=True)
     charged_offmol = charged_offmol_from_sdf # alias for convenience
 
+    # Charge assignment and verification
     def assert_charges_for(self, charger : MolCharger, strict : bool=True, verbose : bool=False, return_cmol : bool=True) -> Optional[Molecule]:
         '''Return charged molecule associated with a particular charger's method
         If not already extant, will generate new charge sets and SDFs'''
@@ -508,7 +509,7 @@ class Polymer:
             raise MissingMonomerData
 
         LOGGER.warning('Generating new monomer JSON file with monomer-averaged charges')
-        if self.solvent is not None and self.solvent.charges is not None: # ensure solvent "monomer" charge entries are also recorded
+        if self.solvent is not None and self.solvent.charges is not None: # ensure solvent "monomer" charge entries are also recorded - explicit check for NoneType in case of empty dicts
             residue_charges = {**residue_charges, **self.solvent.monomer_json_data['charges']} 
         chgd_monomer_data = {**self.monomer_data_uncharged} # load uncharged monomer_data and create copy - TOSELF : this variable name is confusing but is correct (will be charged subsequently)
         chgd_monomer_data['charges'] = residue_charges
@@ -521,23 +522,54 @@ class Polymer:
         self.monomer_file_chgd = chgd_mono_path # record path to new json file
 
     @update_checkpoint
+    def generate_residue_charges(self, charge_method : str) -> ResidueChargeMap:
+        '''Obtain residue-averaged substructure charge maps for a stored set of charges
+        Will raise KeyError if the specified charges are not registered'''
+        LOGGER.info(f'Averaging {charge_method} charges over {self.mol_name} residues')
+        return get_averaged_residue_charges(
+            cmol = self.charged_offmol(charge_method), # TODO : add check to ensure this ISN'T and averaging method
+            monomer_data = self.monomer_data
+        )
+
+    @update_checkpoint
     def residue_charges(self, averaging_charge_method: str='ABE10_exact', overwrite_charged_monomer_file : bool=False) -> dict[str, ResidueChargeMap]:
         '''Return a residue-name-keyed dict of atomic partial charges by substructure ID within a residue'''
         if self.has_monomer_data_charged:
             LOGGER.info(f'Found charged JSON, loading averaged charges for {self.mol_name} residues from file')
             residue_charges = self.monomer_data_charged['charges']
         else:
-            LOGGER.info(f'No charged JSON found, averaging charges over {self.mol_name} residues')
-            residue_charges = get_averaged_residue_charges(
-                cmol = self.charged_offmol(averaging_charge_method),
-                monomer_data = self.monomer_data
-            )
+            residue_charges = self.generate_residue_charges(averaging_charge_method)
         
         if (not self.has_monomer_data_charged) or overwrite_charged_monomer_file: # TOSELF : this is separate from the above clauses as it might be called regardless of existing charges during overwrite
             self.create_charged_monomer_file(residue_charges)
 
         return residue_charges
+    
+    def obtain_partial_charges(self, chg_params : ChargingParameters) -> None:
+        '''Ensure a Polymer has all partial charge sets'''
+        # 0) LOAD MOLECULE AND TOPOLOGY, ATTEMPT TO APPLY LIBRARY CHARGES
+        if not self.has_monomer_data:
+            raise FileExistsError(f'No monomer JSONs found for {self.mol_name}')
 
+        # 1) ENSURING CHARGES AND RELATED FILES FOR ALL BASE CHARGING METHODS EXIST
+        for chg_method in chg_params.charge_methods:
+            chgr = CHARGER_REGISTRY[chg_method]()
+            self.assert_charges_for(chgr, return_cmol=False)
+            
+        # 2) GENERATE RESIDUE-AVERAGED LIBRARY CHARGES FROM THE CHARGE SET OF CHOICE
+            avg_chgr = AveragingCharger()
+            residue_charges = self.residue_charges(
+                averaging_charge_method=chg_params.averaging_charge_method,
+                overwrite_charged_monomer_file=chg_params.overwrite_chg_mono
+            )
+            avg_chgr.set_residue_charges(residue_charges)
+            self.assert_charges_for(avg_chgr, return_cmol=False)
+
+        # 3) GENERATE NEW FF XML IF NEEDED
+        if (self.ff_file is None) or chg_params.overwrite_ff_xml: # can only reach if a charged monomer json already exists
+            forcefield = self.create_FF_file(xml_src=chg_params.base_ff_path, return_lib_chgs=True)
+
+    # Charge visualization
     def compare_charges(self, charge_method_1 : str, charge_method_2 : str, *args, **kwargs) -> tuple[Figure, Axes]:
         '''Plot a heat map showing the atomwise discrepancies in partial charges between any pair of registered charge sets'''
         chgd_rdmol1 = self.charged_offmol_from_sdf(charge_method_1).to_rdkit()
@@ -694,8 +726,8 @@ class Polymer:
     def interchange(self, charge_method : str, periodic : bool=True):
         '''Create an Interchange object for a SMIRNOFF force field using internal structural files'''
         off_topology = self.off_topology_matched() # self.off_topology
-        if periodic:
-            off_topology.box_vectors = self.box_vectors.in_units_of(nanometer) # set box vector to allow for periodic simulation (will be non-periodic if polymer box vectors are unset i.e. NoneType)
+        if periodic: # set box vector to allow for periodic simulation (will be non-periodic if polymer box vectors are unset i.e. NoneType)
+            off_topology.box_vectors = self.box_vectors.in_units_of(nanometer) 
         self.assign_charges_by_lookup(charge_method) # assign relevant charges prior to returning molecule
   
         LOGGER.info(f'Creating SMIRNOFF Interchange for "{self.mol_name}"')
@@ -707,11 +739,11 @@ class Polymer:
         interchange = self.interchange(sim_params.charge_method, periodic=periodic)
         run_simulation(interchange, sim_params=sim_params, output_folder=sim_folder, output_name=self.mol_name, ensemble=ensemble)
 
-    def load_sim_paths_and_params(self, sim_dir : Path=None) -> tuple[SimulationPaths, SimulationParameters]:
+    def load_sim_paths_and_params(self, sim_dir : Optional[Path]=None) -> tuple[SimulationPaths, SimulationParameters]:
         '''Takes a path to a simulation directory and returns the associated simulation file paths and parameters
         If no path is provided, will use most recent simulation by default'''
         if sim_dir is None:
-            sim_dir = self.newest_sim_dir # use most recent simulation 
+            sim_dir = self.newest_sim_dir # use most recent simulation by default
 
         sim_paths_file = self.simulation_paths[sim_dir] # will raise KeyError if no such simulation exists
         sim_paths = SimulationPaths.from_file(sim_paths_file)
@@ -719,6 +751,14 @@ class Polymer:
 
         return sim_paths, sim_params
 
+    def load_traj(self, sim_dir : Optional[Path]=None, **kwargs) -> Trajectory:
+        '''Load a trajectory for a simulation directory'''
+        if sim_dir is None:
+            sim_dir = self.newest_sim_dir # use most recent simulation by default
+
+        sim_paths, sim_params = self.load_sim_paths_and_params(sim_dir)
+        return load_traj(sim_paths.trajectory, topo_path=self.structure_file, **kwargs)
+    
     def filter_sim_dirs(self, conditions : Union[SimDirFilter, Iterable[SimDirFilter]]) -> dict[Path, tuple[SimulationPaths, SimulationParameters]]:
         '''Returns all simulation directories which meet some binary condition based on their simulation file paths and/or the parameters with which the simulation was ran'''
         conditions = extratypes.asiterable(conditions)
@@ -729,11 +769,6 @@ class Polymer:
                 valid_sim_dirs[sim_dir] = (sim_paths, sim_params)
 
         return valid_sim_dirs
-    
-    def load_traj(self, sim_dir : Path, **kwargs) -> Trajectory:
-        '''Load a trajectory for a simulation directory'''
-        sim_paths, sim_params = self.load_sim_paths_and_params(sim_dir)
-        return load_traj(sim_paths.trajectory, topo_path=self.structure_file, **kwargs)
 
     def purge_sims(self, really : bool=False) -> None:
         '''Empties all extant simulation folders - MAKE SURE YOU KNOW WHAT YOU'RE DOING HERE'''
@@ -769,9 +804,13 @@ identity          = lambda polymer : True # no filter, return all polymers (or c
 has_sims          = filter_factory_by_attr('completed_sims')
 has_monomers      = filter_factory_by_attr('has_monomer_data')
 has_monomers_chgd = filter_factory_by_attr('has_monomer_data_charged')
+
 is_charged        = filter_factory_by_attr('charges')
 is_uncharged      = filter_factory_by_attr('charges', inclusive=False)
+
+is_solvated       = filter_factory_by_attr('solvent')
 is_unsolvated     = filter_factory_by_attr('solvent', inclusive=False)
+
 is_AM1_sized      = filter_factory_by_attr('n_atoms', condition=lambda n : 0 < n <= 300)
 is_base           = lambda polymer : polymer.base_mol_name == polymer.mol_name
 # has_monomers = lambda polymer : polymer.has_monomer_data 
