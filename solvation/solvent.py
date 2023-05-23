@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from ..extratypes import MonomerInfo
 from openmm.unit import AVOGADRO_CONSTANT_NA
 
 
@@ -35,7 +37,7 @@ class Solvent:
         '''
         return (self.density / self.MW) * AVOGADRO_CONSTANT_NA
 
-    @property
+    @property # TOSELF : slated for deprecation once converted over to MonomerInfo representation
     def monomer_json_data(self): # TOSELF : given th plugin spec, could potentially just make this read a JSON?
         '''Generate a monomer-spec-conformant JSON dictionary entry'''
         return {
@@ -49,3 +51,15 @@ class Solvent:
                 self.name : self.charges
             }
         }
+    
+    @property
+    def monomer_info(self) -> MonomerInfo:
+        '''Generate monomer information representation'''
+        return MonomerInfo(
+            monomers={
+                self.name : self.smarts
+            },
+            charges={
+                self.name : self.charges
+            }
+        )
