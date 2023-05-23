@@ -1,9 +1,11 @@
 '''For manipulating RDKit molecule and atom properties (Props)'''
 
 # Typing and Subclassing
-from typing import Any, Optional, Union
+from typing import Any, Union
 from .rdtypes import RDMol, RDAtom
 from openff.toolkit.topology.molecule import Atom
+
+from polysaccharide.general import optional_in_place
 
 
 # For lookup of varoius C++ type-specific methods RDKit enforces
@@ -48,24 +50,29 @@ def aggregate_atom_prop(rdmol : RDMol, prop : str, prop_type : type=str) -> list
             for atom in rdmol.GetAtoms()
     ]
 
-# Property modification functions - TODO : add non-inplace versions of all of these methods
-def hydrogenate_rdmol_ports(rdmol : RDMol, return_port_ids : bool=False) -> Optional[list[int]]:
-    '''Replace all ports (i.e. wild *-type atoms) in a molecule with hydrogens'''
-    port_ids = []
-    for atom in rdmol.GetAtoms():
-        if atom.GetAtomicNum() == 0:
-            atom.SetAtomicNum(1) # convert wild-type atoms to hydrogens
-            port_ids.append(atom.GetIdx()) # record the positions of the ports in the original molecule
+def get_port_ids(rdmol : RDMol) -> list[int]:
+    '''Get atom indices of port (i.e. wild *-type or undefined) atoms'''
+    return [
+        atom.GetIdx()
+            for atom in rdmol.GetAtoms()
+                if atom.GetAtomicNum() == 0
+    ]
 
-    if return_port_ids:
-        return port_ids
-    
+# Property modification functions - can be done to passed molecule or read-only (via copy) 
+@optional_in_place
+def hydrogenate_rdmol_ports(rdmol : RDMol) -> None:
+    '''Replace all port atoms with hydrogens'''
+    for port_id in get_port_ids(rdmol):
+        rdmol.GetAtomWithIdx(port_id).SetAtomicNum(1)
+
+@optional_in_place    
 def assign_ordered_atom_map_nums(rdmol : RDMol) -> None:
     '''Assigns atom's id to its atom map number for all atoms in an RDmol'''
     for atom in rdmol.GetAtoms():
         atom.SetAtomMapNum(atom.GetIdx()) # need atom map numbers to preserve positional mapping in SMARTS
         # atom.SetAtomMapNum(atom.GetIdx() + 1) # need atom map numbers to preserve positional mapping in SMARTS; "+1" avoids mapping any atoms to 0
 
+@optional_in_place
 def clear_atom_map_nums(rdmol : RDMol) -> None:
     '''Removes atom map numbers from all atoms in an RDMol'''
     for atom in rdmol.GetAtoms():
