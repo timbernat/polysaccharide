@@ -1,5 +1,5 @@
 # TOSELF : might be nice to find a way to may this relative for transferability (standard "." notation gives ImportError: attempted relative import beyond top-level package)
-from polysaccharide.solvation.solvent import Solvent 
+from ...solvent import Solvent 
 from openmm.unit import gram, centimeter, mole
 from pathlib import Path
 
@@ -12,9 +12,9 @@ WATER_TIP3P = Solvent(
     density = 0.997 * (gram / centimeter**3), # at 300 K
     MW      = 18.015 * (gram / mole),
     charges = {
-        "1" : 0.417, 
-        "2" : 0.417,
-        "3" : -0.834 
+        1 : 0.417, 
+        2 : 0.417,
+        3 : -0.834 
     },
     structure_file  = Path(__file__).parent/'water.pdb',
     forcefield_file = Path(__file__).parent/'tip3p.offxml'
