@@ -1,5 +1,9 @@
 '''Utilities for building new polymer structures; currently limited to linear polymers and PDB save format'''
 
+# logging
+import logging
+LOGGER = logging.getLogger(__name__)
+
 # Molecule building
 import mbuild as mb
 from mbuild import Compound
@@ -19,9 +23,9 @@ from ...extratypes import ResidueSmarts
 def mbmol_from_mono_smarts(SMARTS : str) -> tuple[Compound, list[int]]:
     '''Accepts a monomer-spec-compliant SMARTS string and returns an mbuild Compound and a list of the indices of hydrogen ports'''
     orig_rdmol = Chem.MolFromSmarts(SMARTS)
-    mono_smiles = Chem.MolToSmiles(orig_rdmol)
     orig_port_ids = rdprops.get_port_ids(orig_rdmol) # record indices of ports
     rdprops.hydrogenate_rdmol_ports(orig_rdmol, in_place=True) # replace ports with Hs to give complete fragments
+    mono_smiles = Chem.MolToSmiles(orig_rdmol) # NOTE : CRITICAL that this be done AFTER hydrogenation (to avoid having ports in SMILES, which mbuild doesn;t know how to handle)
     
     mb_compound = mb.load(mono_smiles, smiles=True)
     mb_ordered_rdmol = Chem.MolFromSmiles(mb_compound.to_smiles()) # create another molecule which has the same atom ordering as the mbuild Compound
@@ -50,6 +54,7 @@ def build_linear_polymer(monomer_smarts : ResidueSmarts, DOP : int, add_Hs : boo
         else:
             chain.add_monomer(compound=mb_monomer, indices=port_ids)
 
+    LOGGER.info(f'Building linear polymer chain with {DOP} monomers ({abmono.estimate_chain_len(monomer_smarts, DOP)} atoms)')
     chain.build(DOP - 2, add_hydrogens=add_Hs) # "-2" is to account for term groups (in mbuild, "n" is the number of times to replicate just the middle monomers)
     for atom in chain.particles():
         atom.charge = 0.0 # initialize all atoms as being uncharged (gets risk of pesky blocks of warnings)
