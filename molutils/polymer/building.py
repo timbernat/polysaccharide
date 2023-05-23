@@ -16,7 +16,7 @@ from . import abmono
 from ..rdmol import rdprops
 
 # Typing and subclassing
-from .expections import SubstructMatchFailedError
+from .exceptions import SubstructMatchFailedError
 from ...extratypes import ResidueSmarts
 
 
