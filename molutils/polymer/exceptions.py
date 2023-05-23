@@ -5,3 +5,6 @@ class SubstructMatchFailedError(Exception):
 
 class InsufficientChainLengthError(Exception):
     pass
+
+class ExcessiveChainLengthError(Exception):
+    pass
