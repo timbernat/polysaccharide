@@ -28,7 +28,10 @@ class SimulationParameters(JSONifiable):
     num_samples : int
     charge_method : str
 
+    ensemble : str
+    periodic : bool = True
     report_to_pdb : bool = False
+
     reported_state_data : dict[str, bool] = field(default_factory=dict)
 
     timestep    : Quantity = (2 * femtosecond)
