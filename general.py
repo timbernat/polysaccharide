@@ -5,6 +5,7 @@ from copy import deepcopy
 
 # Typing and Subclassing
 from typing import Any, Callable, Iterable, Optional, Union
+from dataclasses import dataclass
 
 # Units
 from pint import Quantity as PintQuantity
@@ -33,6 +34,16 @@ for case, idx in _greek_start_idxs.items():
 def product(container : Iterable):
     '''Analogous to builtin sum()'''
     return reduce(mul, container)
+
+@dataclass
+class Accumulator:
+    '''Compact container for accumulating averages'''
+    sum : float = 0.0
+    count : int = 0
+
+    @property
+    def average(self) -> float:
+        return self.sum / self.count
 
 # Functional operations and decorators
 def optional_in_place(funct : Callable[[Any, Any], None]) -> Callable[[Any, Any], Optional[Any]]:
