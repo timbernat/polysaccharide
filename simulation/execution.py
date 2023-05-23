@@ -20,13 +20,13 @@ from .ensemble import ENSEMBLE_REGISTRY
 
 
 # Functions for actually running simulations
-def run_simulation(interchange : Interchange, sim_params : SimulationParameters, output_folder : Path, output_name : str, ensemble : str='NPT') -> None:
+def run_simulation(interchange : Interchange, sim_params : SimulationParameters, output_folder : Path, output_name : str) -> None:
     '''
     Initializes an OpenMM simulation from a SMIRNOFF Interchange in the desired ensemble
     Creates relevant simulation files, generates Reporters for state, checkpoint, and trajectory data,
      performs energy minimization, then integrates the trajectory for the desired number of steps
     '''
-    sim_factory = ENSEMBLE_REGISTRY[ensemble.upper()]() # case-insensitive check for simulation creators for the desired ensemble
+    sim_factory = ENSEMBLE_REGISTRY[sim_params.ensemble.upper()]() # case-insensitive check for simulation creators for the desired ensemble
     simulation = sim_factory.create_simulation(interchange, sim_params=sim_params)
 
     sim_paths = preparation.prepare_simulation_paths(output_folder, output_name, report_to_pdb=sim_params.report_to_pdb)
