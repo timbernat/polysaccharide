@@ -1,10 +1,5 @@
 # Generic Imports
-import numpy as np
 from ast import literal_eval
-
-from ..general import optional_in_place
-
-# File I/O
 from pathlib import Path
 
 # logging setup - will feed up to charging module parent logger
@@ -12,15 +7,13 @@ import logging
 LOGGER = logging.getLogger(__name__)
 
 # Typing and subclassing
-from typing import Any, Optional
+from typing import Any
 from abc import ABC, abstractmethod, abstractproperty
 from dataclasses import dataclass
 
 from . import TOOLKITS
-from .types import ResidueChargeMap
 from ..filetree import JSONifiable, JSONSerializable
 
-from openmm.unit import elementary_charge
 from openff.toolkit.topology.molecule import Molecule
 
 

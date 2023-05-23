@@ -6,9 +6,9 @@ import numpy as np
 from ..general import optional_in_place
 
 # Typing and subclassing
-from typing import Any, Optional
-from .types import AtomIDMap, Accumulator, ResidueChargeMap
+from ..general import Accumulator
 from .residues import ChargedResidue
+from ..extratypes import AtomIDMap, ResidueChargeMap
 
 # logging setup - will feed up to charging module parent logger
 import logging
