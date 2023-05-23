@@ -1,40 +1,32 @@
 '''Utilities for building new polymer structures; currently limited to linear polymers and PDB save format'''
 
-# molecule building
+# Molecule building
 import mbuild as mb
 from mbuild import Compound
 from mbuild.lib.recipes.polymer import Polymer as MBPolymer
 
 # Monomer information
+from rdkit import Chem
+
 from . import abmono
+from ..rdmol import rdprops
 
 # Typing and subclassing
-from ..rdmol.rdtypes import *
-SmartsByResidue = dict[str, str] # monomer SMARTS strings keyed by residue name
-
-# Custom Exceptions for more tailored error messages
-class SubstructMatchFailedError(Exception):
-    pass
-
-class InsufficientChainLengthError(Exception):
-    pass
+from .expections import SubstructMatchFailedError
+from ...extratypes import ResidueSmarts
 
 
 def mbmol_from_mono_smarts(SMARTS : str) -> tuple[Compound, list[int]]:
     '''Accepts a monomer-spec-compliant SMARTS string and returns an mbuild Compound and a list of the indices of hydrogen ports'''
     orig_rdmol = Chem.MolFromSmarts(SMARTS)
-
-    orig_port_ids = []
-    for atom in orig_rdmol.GetAtoms():
-        if atom.GetAtomicNum() == 0:
-            atom.SetAtomicNum(1) # convert wild-type atoms to hydrogens
-            orig_port_ids.append(atom.GetIdx()) # record the positions of the ports in the original molecule
-
     mono_smiles = Chem.MolToSmiles(orig_rdmol)
+    orig_port_ids = rdprops.get_port_ids(orig_rdmol) # record indices of ports
+    rdprops.hydrogenate_rdmol_ports(orig_rdmol, in_place=True) # replace ports with Hs to give complete fragments
+    
     mb_compound = mb.load(mono_smiles, smiles=True)
-
     mb_ordered_rdmol = Chem.MolFromSmiles(mb_compound.to_smiles()) # create another molecule which has the same atom ordering as the mbuild Compound
     mb_ordered_rdmol = Chem.AddHs(mb_ordered_rdmol) # mbuild molecules don't have explicit Hs when converting to SMILES (although luckily AddHs adds them in the same order)
+    
     mb_isomorphism = mb_ordered_rdmol.GetSubstructMatch(orig_rdmol) # determine mapping between original and mbuild atom indices
     if not mb_isomorphism: # ensure that the structures were in fact able to be matched before attempting backref map
         raise SubstructMatchFailedError
@@ -42,7 +34,7 @@ def mbmol_from_mono_smarts(SMARTS : str) -> tuple[Compound, list[int]]:
 
     return mb_compound, mb_port_ids
 
-def build_linear_polymer(monomer_smarts : dict[str, str], DOP : int, add_Hs : bool=False, reverse_term_labels : bool=False) -> MBPolymer:
+def build_linear_polymer(monomer_smarts : ResidueSmarts, DOP : int, add_Hs : bool=False, reverse_term_labels : bool=False) -> MBPolymer:
     '''Accepts a dict of monomer residue names and SMARTS (as one might find in a monomer JSON)
     and a degree of polymerization (i.e. chain length in number of monomers)) and returns an mbuild Polymer object'''
     chain = MBPolymer() 
@@ -64,7 +56,7 @@ def build_linear_polymer(monomer_smarts : dict[str, str], DOP : int, add_Hs : bo
 
     return chain
 
-def build_linear_polymer_limited(monomer_smarts : SmartsByResidue, max_chain_len : int, **build_args):
+def build_linear_polymer_limited(monomer_smarts : ResidueSmarts, max_chain_len : int, **build_args):
     '''Build a linear polymer which is no longer than the specified chain length'''
     DOP = abmono.estimate_max_DOP(monomer_smarts, max_chain_len=max_chain_len) # will raise error if length is unsatisfiable
     return build_linear_polymer(monomer_smarts, DOP=DOP, **build_args)

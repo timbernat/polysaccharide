@@ -2,7 +2,7 @@
 
 # Typing and subclassing
 from typing import Any, Callable, Iterable
-from .rdmol.rdtypes import *
+from .rdmol.rdtypes import RDMol, RDBond
 
 # Functional methods
 from functools import partial

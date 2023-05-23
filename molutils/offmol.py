@@ -1,6 +1,5 @@
 # Typing and Subclassing
 from typing import Any, Callable
-from .rdmol.rdtypes import *
 
 # Cheminformatics
 from openff.toolkit import Molecule, Topology
@@ -10,7 +9,7 @@ from rdkit import Chem
 from .rdmol.rdprops import copy_atom_metadata
 
 
-def offmol_to_topo(offmol : Molecule, rdmol_func : Callable[[RDMol, Any], RDMol]=lambda x : x, allow_undefined_stereo : bool=True, hydrogens_are_explicit : bool=True) -> Topology:
+def offmol_to_topo(offmol : Molecule, rdmol_func : Callable[[Chem.rdchem.Mol, Any], Chem.rdchem.Mol]=lambda x : x, allow_undefined_stereo : bool=True, hydrogens_are_explicit : bool=True) -> Topology:
     '''Accepts a Molecule and assembles it into a Topology. Optionally accepts a function which manipulates
     the RDKit representation of a Molecule (for instance, fragmenting it in a particular way)'''
     rdmol = rdmol_func(offmol.to_rdkit())
@@ -21,7 +20,7 @@ def offmol_to_topo(offmol : Molecule, rdmol_func : Callable[[RDMol, Any], RDMol]
             for frag in frags
     )
 
-def to_rdkit_with_metadata(offmol : Molecule, preserve_type : bool=True) -> RDMol:
+def to_rdkit_with_metadata(offmol : Molecule, preserve_type : bool=True) -> Chem.rdchem.Mol:
     '''Converts an OpenFF molecule to an RDKit molecule, preserving atomic metadata'''
     rdmol = offmol.to_rdkit()
     for i, offatom in enumerate(offmol.atoms):

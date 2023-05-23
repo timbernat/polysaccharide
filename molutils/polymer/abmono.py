@@ -5,13 +5,12 @@ import re
 import numpy as np
 
 # Typing and subclassing
-from ..rdmol.rdtypes import *
+from .expections import InsufficientChainLengthError
 from ..rdmol import rdprops
 SmartsByResidue = dict[str, str] # monomer SMARTS strings keyed by residue name
 
-# Custom Exceptions for more tailored error messages
-class InsufficientChainLengthError(Exception):
-    pass
+# Cheminformatics
+from rdkit import Chem
 
 
 # Estimating chain parameters from monomer info
@@ -26,7 +25,7 @@ def unique_monomers(monomer_smarts : SmartsByResidue) -> set[str]:
 
     return unique_mono
 
-def count_ports_in_rdmol(rdmol : RDMol) -> int:
+def count_ports_in_rdmol(rdmol : Chem.rdchem.Mol) -> int:
     '''Counts the number of ports present in an RDMol monomer'''
     return sum(1 for atom in rdmol.GetAtoms() if not atom.GetAtomicNum())
 

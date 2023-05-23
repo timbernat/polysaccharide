@@ -2,7 +2,7 @@
 
 # Typing
 from typing import Union
-from .rdtypes import *
+from .rdtypes import RDMol
 
 # Subclassing
 import copy

@@ -11,14 +11,14 @@ from .rdkdraw import rdmol_prop_heatmap_colorscaled
 from typing import Union
 from matplotlib.colors import Colormap
 
-from .rdtypes import *
+from .rdtypes import RDMol
 
 # Cheminformatics
 from rdkit import Chem
 from . import rdconvert
 
 
-def difference_rdmol(rdmol_1 : Chem.rdchem.Mol, rdmol_2 : Chem.rdchem.Mol, prop : str='PartialCharge', remove_map_nums : bool=True) -> Chem.rdchem.Mol:
+def difference_rdmol(rdmol_1 : RDMol, rdmol_2 : RDMol, prop : str='PartialCharge', remove_map_nums : bool=True) -> RDMol:
     '''
     Takes two RDKit Mols (presumed to have the same structure and atom map numbers) and the name of a property 
     whose partial charges are the differences betwwen the two Mols' charges (atomwise)
