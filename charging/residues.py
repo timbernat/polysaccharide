@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 from networkx import Graph
 from rdkit.Chem.rdchem import Mol as RDMol
-from .types import ChargeMap
+from ..extratypes import ChargeMap
 
 
 # Interface for distributing non-integral monomer charges
