@@ -298,7 +298,7 @@ class Polymer:
             return json.load(json_file, object_hook=unserialize_monomer_json)
 
     @property
-    def forcefield(self):
+    def forcefield(self) -> ForceField:
         if self.ff_file is None:
             raise MissingForceFieldData
         return ForceField(self.ff_file, allow_cosmetic_attributes=True)
@@ -316,22 +316,22 @@ class Polymer:
     rdmol = largest_rdmol # alias for simplicity
 
     @property
-    def n_atoms(self):
+    def n_atoms(self) -> int:
         '''Number of atoms in the main polymer chain (excluding solvent)'''
         return self.rdmol.GetNumAtoms()
 
     @property
-    def mol_bbox(self):
+    def mol_bbox(self) -> ndarray:
         '''Return the bounding box size (in angstroms) of the molecule represented'''
         return self.rdmol.GetConformer().GetPositions().ptp(axis=0) * angstrom
     
     @property
-    def box_vectors(self):
+    def box_vectors(self) -> ndarray:
         '''Dimensions fo the periodic simulation box'''
         return self.mol_bbox + 2*self.exclusion # 2x accounts for the fact that exclusion must occur on either side of the tight bounding box
     
     @property
-    def box_volume(self):
+    def box_volume(self) -> float:
         return general.product(self.box_vectors)
 
 # OpenFF MOLECULE PROPERTIES
@@ -359,7 +359,7 @@ class Polymer:
     
     # Property wrappers for default cases - simplifies notation for common usage. Rematched versions are still exposed thru *_matched OFF methods
     @property
-    def off_topology(self):
+    def off_topology(self) -> Topology:
         '''Cached version of graph-matched Topology to reduce load times'''
         if self._off_topology is None:
             self._off_topology = self.off_topology_matched() # cache topology match
@@ -367,7 +367,7 @@ class Polymer:
         return self._off_topology
     
     @property
-    def off_topology_unmatched(self):
+    def off_topology_unmatched(self) -> Topology:
         '''Cached version of Topology which is explicitly NOT graph-matched (limited chemical info but compatible with vanilla OpenFF)'''
         if self._off_topology_unmatched is None:
             assert(self.structure_file.exists())
@@ -380,7 +380,7 @@ class Polymer:
         return self._off_topology_unmatched 
 
     @property 
-    def largest_offmol(self):
+    def largest_offmol(self) -> Molecule:
         '''Cached version of primary Molecule (WITH graph match) to reduce load times'''
         if self._offmol is None:
             self._offmol = self.offmol_matched()
@@ -389,7 +389,7 @@ class Polymer:
     offmol = largest_offmol # alias for simplicity
     
     @property 
-    def largest_offmol_unmatched(self):
+    def largest_offmol_unmatched(self) -> Molecule:
         '''Cached version of primary Molecule (WITHOUT graph match) to reduce load times'''
         if self._offmol_unmatched is None:
             self._offmol_unmatched = max(self.off_topology_unmatched.molecules, key=lambda mol : mol.n_atoms)
@@ -688,7 +688,7 @@ class Polymer:
         return self.chrono_sims[-1]
     
     @property
-    def simulation_paths(self):
+    def simulation_paths(self) -> dict[Path, Path]:
         '''Dict of all extant simulation dirs and their internal path reference files'''
         sim_paths = {}
         for sim_dir in self.completed_sims:
@@ -718,11 +718,11 @@ class Polymer:
         LOGGER.info(f'Creating SMIRNOFF Interchange for "{self.mol_name}"')
         return Interchange.from_smirnoff(force_field=self.forcefield, topology=off_topology, charge_from_molecules=[self.offmol]) # package FF, topoplogy, and molecule charges together and ship out
         
-    def run_simulation(self, sim_params : SimulationParameters, ensemble : str='NPT', periodic : bool=True) -> None:
+    def run_simulation(self, sim_params : SimulationParameters) -> None:
         '''Run OpenMM simulation according to a set of predefined simulation parameters'''
         sim_folder = self.make_sim_dir()
-        interchange = self.interchange(sim_params.charge_method, periodic=periodic)
-        run_simulation(interchange, sim_params=sim_params, output_folder=sim_folder, output_name=self.mol_name, ensemble=ensemble)
+        interchange = self.interchange(sim_params.charge_method, periodic=sim_params.periodic)
+        run_simulation(interchange, sim_params=sim_params, output_folder=sim_folder, output_name=self.mol_name)
 
     def load_sim_paths_and_params(self, sim_dir : Optional[Path]=None) -> tuple[SimulationPaths, SimulationParameters]:
         '''Takes a path to a simulation directory and returns the associated simulation file paths and parameters
