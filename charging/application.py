@@ -17,26 +17,6 @@ from ..filetree import JSONifiable, JSONSerializable
 from openff.toolkit.topology.molecule import Molecule
 
 
-# charge generation and application
-def generate_molecule_charges(mol : Molecule, toolkit : str='OpenEye Toolkit', partial_charge_method : str='am1bccelf10', force_match : bool=True) -> Molecule:
-    '''Takes a Molecule object and computes partial charges with AM1BCC using toolkit method of choice. Returns charged molecule'''
-    tk_reg = TOOLKITS.get(toolkit)
-    mol.assign_partial_charges(partial_charge_method=partial_charge_method, toolkit_registry=tk_reg)
-    charged_mol = mol # rename for clarity
-
-    # charged_mol.generate_conformers( # get some conformers to run elf10 charge method. By default, `mol.assign_partial_charges`...
-    #     n_conformers=10,             # ...uses 500 conformers, but we can generate and use 10 here for demonstration
-    #     rms_cutoff=0.25 * unit.angstrom,
-    #     make_carboxylic_acids_cis=True,
-    #     toolkit_registry=tk_reg
-    # ) # very slow for large polymers! 
-
-    if force_match:
-        for atom in charged_mol.atoms:
-            assert(atom.metadata['already_matched'] == True)
-        
-    return charged_mol 
-
 # File I/O for format-specific decoding and deserialization
 @dataclass
 class ChargingParameters(JSONifiable):
@@ -106,6 +86,25 @@ def unserialize_monomer_json(ser_jdict : dict[str, JSONSerializable]) -> dict[An
     return unser_jdict
 
 # Molecule charging interface
+def generate_molecule_charges(mol : Molecule, toolkit : str='OpenEye Toolkit', partial_charge_method : str='am1bccelf10', force_match : bool=True) -> Molecule:
+    '''Takes a Molecule object and computes partial charges with AM1BCC using toolkit method of choice. Returns charged molecule'''
+    tk_reg = TOOLKITS.get(toolkit)
+    mol.assign_partial_charges(partial_charge_method=partial_charge_method, toolkit_registry=tk_reg)
+    charged_mol = mol # rename for clarity
+
+    # charged_mol.generate_conformers( # get some conformers to run elf10 charge method. By default, `mol.assign_partial_charges`...
+    #     n_conformers=10,             # ...uses 500 conformers, but we can generate and use 10 here for demonstration
+    #     rms_cutoff=0.25 * unit.angstrom,
+    #     make_carboxylic_acids_cis=True,
+    #     toolkit_registry=tk_reg
+    # ) # very slow for large polymers! 
+
+    if force_match:
+        for atom in charged_mol.atoms:
+            assert(atom.metadata['already_matched'] == True)
+        
+    return charged_mol 
+
 class MolCharger(ABC):
     '''Base interface for defining various methods of generating and storing atomic partial charges'''
     @abstractproperty
