@@ -11,6 +11,7 @@ from .simulation.execution import run_simulation
 
 from .analysis.trajectory import load_traj
 from .molutils.rdmol.rdcompare import compare_chgd_rdmols
+from .molutils.rdmol.rdprops import assign_ordered_atom_map_nums
 
 # Typing and Subclassing
 from typing import Any, Callable, ClassVar, Iterable, Optional, TypeAlias, Union
@@ -512,8 +513,8 @@ class Polymer:
         Will raise KeyError if the specified charges are not registered'''
         LOGGER.info(f'Averaging {charge_method} charges over {self.mol_name} residues')
         return get_averaged_residue_charges(
-            cmol = self.charged_offmol(charge_method), # TODO : add check to ensure this ISN'T and averaging method
-            monomer_data = self.monomer_data
+            cmol=self.charged_offmol(charge_method), # TODO : add check to ensure this ISN'T and averaging method
+            monomer_info=self.monomer_data
         )
 
     @update_checkpoint
@@ -557,8 +558,10 @@ class Polymer:
     # Charge visualization
     def compare_charges(self, charge_method_1 : str, charge_method_2 : str, *args, **kwargs) -> tuple[Figure, Axes]:
         '''Plot a heat map showing the atomwise discrepancies in partial charges between any pair of registered charge sets'''
-        chgd_rdmol1 = self.charged_offmol_from_sdf(charge_method_1).to_rdkit()
-        chgd_rdmol2 = self.charged_offmol_from_sdf(charge_method_2).to_rdkit()
+        chgd_offmol1 = self.charged_offmol_from_sdf(charge_method_1)
+        chgd_offmol2 = self.charged_offmol_from_sdf(charge_method_2)
+        chgd_rdmol1 = assign_ordered_atom_map_nums(chgd_offmol1.to_rdkit()) # ensure map numbers are present for correct matching
+        chgd_rdmol2 = assign_ordered_atom_map_nums(chgd_offmol2.to_rdkit()) # ensure map numbers are present for correct matching
 
         return compare_chgd_rdmols(chgd_rdmol1, chgd_rdmol2, charge_method_1, charge_method_2, *args, **kwargs)
     
@@ -716,7 +719,7 @@ class Polymer:
         self.assign_charges_by_lookup(charge_method) # assign relevant charges prior to returning molecule
   
         LOGGER.info(f'Creating SMIRNOFF Interchange for "{self.mol_name}"')
-        return Interchange.from_smirnoff(force_field=self.forcefield, topology=off_topology, charge_from_molecules=[self.offmol]) # package FF, topoplogy, and molecule charges together and ship out
+        return Interchange.from_smirnoff(force_field=self.forcefield, topology=off_topology, charge_from_molecules=[self.offmol]) # package FF, topology, and molecule charges together and ship out
         
     def run_simulation(self, sim_params : SimulationParameters) -> None:
         '''Run OpenMM simulation according to a set of predefined simulation parameters'''
