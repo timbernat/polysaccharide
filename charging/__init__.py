@@ -6,6 +6,10 @@ import logging
 from openff.toolkit import GLOBAL_TOOLKIT_REGISTRY as GTR
 from espaloma_charge.openff_wrapper import EspalomaChargeToolkitWrapper
 
+from pathlib import Path
+import openforcefields
+
+
 # Create molecule charging toolkit registries
 GTR.register_toolkit(EspalomaChargeToolkitWrapper)
 TOOLKITS = { 
@@ -13,7 +17,10 @@ TOOLKITS = {
         for tk in GTR.registered_toolkits
 }
 
-# import submodules, register logger
+# Locate path where OpenFF forcefields are installed
+OPENFF_DIR = Path(openforcefields.get_forcefield_dirs_paths()[0])
+
+# Import submodules, register logger
 LOGGER = logging.getLogger(__name__)
 for _loader, _module_name, _ispkg in pkgutil.iter_modules(__path__):
     module = importlib.import_module(f'{__package__}.{_module_name}')
