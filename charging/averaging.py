@@ -8,7 +8,7 @@ from ..general import optional_in_place
 # Typing and subclassing
 from ..general import Accumulator
 from .residues import ChargedResidue
-from ..extratypes import AtomIDMap, ResidueSmarts, ResidueChargeMap
+from ..extratypes import AtomIDMap, MonomerInfo, ResidueSmarts, ResidueChargeMap
 
 # logging setup - will feed up to charging module parent logger
 import logging
@@ -39,7 +39,7 @@ def find_repr_residues(mol : Molecule) -> dict[str, int]:
 
     return rep_res_nums
 
-def get_averaged_charges(cmol : Molecule, monomer_info : dict[str, dict], distrib_mono_charges : bool=True, net_mono_charge : float=0.0) -> tuple[list[ChargedResidue], AtomIDMap]:
+def get_averaged_charges(cmol : Molecule, monomer_info : MonomerInfo, distrib_mono_charges : bool=True, net_mono_charge : float=0.0) -> tuple[list[ChargedResidue], AtomIDMap]:
     '''Takes a charged molecule and a dict of monomer SMIRKS strings and averages charges for each repeating residue. 
     Returns a list of ChargedResidue objects, each of which holds:
         - A dict of the averaged charges by atom 
@@ -69,7 +69,7 @@ def get_averaged_charges(cmol : Molecule, monomer_info : dict[str, dict], distri
         # rdSMARTS = rdmolfiles.MolFragmentToSmarts(rdmol, atomsToUse=atom_id_mapping[res_name].keys()) # determine SMARTS for the current residue's representative group
         # mol_frag = rdmolfiles.MolFromSmarts(rdSMARTS) # create fragment from rdkit SMARTS to avoid wild atoms (using rdkit over nx.subgraph for more detailed atomwise info)
         
-        SMARTS = monomer_info['monomers'][res_name] # extract SMARTS string from monomer data
+        SMARTS = monomer_info.monomers[res_name] # extract SMARTS string from monomer data
         charge_map = {substruct_id : accum.average for substruct_id, accum in charge_map.items()} 
         atom_id_map = atom_id_mapping[res_name]
 
@@ -90,7 +90,7 @@ def get_averaged_charges(cmol : Molecule, monomer_info : dict[str, dict], distri
 
     return avg_charges_by_residue, atom_id_mapping
 
-def get_averaged_residue_charges(cmol : Molecule, monomer_info : dict[str, dict], distrib_mono_charges : bool=True, net_mono_charge : float=0.0) -> dict[str, ResidueChargeMap]:
+def get_averaged_residue_charges(cmol : Molecule, monomer_info : MonomerInfo, distrib_mono_charges : bool=True, net_mono_charge : float=0.0) -> dict[str, ResidueChargeMap]:
     '''Wrapper for get_averaged_charges if only interested in substructure charge mapping (i.e. no surrounding Topology or charge redistribution info)'''
     avgd_res, atom_id_mapping = get_averaged_charges(
         cmol,
@@ -127,17 +127,17 @@ class AveragingCharger(MolCharger):
 
 
 # functions for outputting and recording charges
-def write_lib_chgs_from_mono_data(monomer_info : dict[str, dict], offxml_src : Path, output_path : Path) -> tuple[ForceField, list[LibraryChargeHandler]]: # TODO - refactor to accept MonomerInfo instance
+def write_lib_chgs_from_mono_data(monomer_info : MonomerInfo, offxml_src : Path, output_path : Path) -> tuple[ForceField, list[LibraryChargeHandler]]: # TODO - refactor to accept MonomerInfo instance
     '''Takes a monomer JSON file (must contain charges!) and a force field XML file and appends Library Charges based on the specified monomers. Outputs to specified output_path'''
     LOGGER.warning('Generating new forcefield XML with added Library Charges')
     assert(output_path.suffix == '.offxml') # ensure output path is pointing to correct file type
-    assert(monomer_info.get('charges') is not None) # ensure charge entries are present
+    assert(monomer_info.has_charges) # ensure charge entries are present
 
     forcefield = ForceField(offxml_src) # simpler to add library charges through forcefield API than to directly write to xml
     lc_handler = forcefield["LibraryCharges"]
 
     lib_chgs = [] #  all library charges generated from the averaged charges for each residue
-    for resname, charge_dict in monomer_info['charges'].items(): # ensures no uncharged structure are written as library charges (may be a subset of the monomers structures in the file)
+    for resname, charge_dict in monomer_info.charges.items(): # ensures no uncharged structure are written as library charges (may be a subset of the monomers structures in the file)
         # NOTE : original implementation deprecated due to imcompatibility with numbered ports, kept in comments here for backward compatibility and debug reasons
         # lc_entry = { # stringify charges into form usable for library charges
         #     f'charge{cid}' : f'{charge} * elementary_charge' 
@@ -146,7 +146,7 @@ def write_lib_chgs_from_mono_data(monomer_info : dict[str, dict], offxml_src : P
         # lc_entry['smirks'] = monomer_info['monomers'][resname] # add SMIRKS string to library charge entry to allow for correct labelling
         
         lc_entry = {}
-        rdmol = Chem.MolFromSmarts(monomer_info['monomers'][resname])
+        rdmol = Chem.MolFromSmarts(monomer_info.monomers[resname])
 
         new_atom_id = 1 # counter for remapping atom ids - NOTE : cannot start at 0, since that would denote an invalid atom
         for atom in sorted(rdmol.GetAtoms(), key=lambda atom : atom.GetAtomMapNum()): # renumber according to map number order, NOT arbitrary RDKit atom ordering

@@ -1,5 +1,6 @@
 # Custom Imports
 from . import extratypes, general, filetree
+from .extratypes import MonomerInfo
 from .logutils import timestamp_now, extract_time, ProcessLogHandler
 from .solvation.packmol import packmol_solvate_wrapper
 
@@ -106,11 +107,11 @@ class Polymer:
         self.charges : dict[str, ndarray[float]] = {}
         self.charge_method : str = None
         
-        self.ff_file              : Optional[Path]  = None # .OFFXML
-        self.monomer_file         : Optional[Path]  = None # .JSON
-        self.monomer_file_chgd    : Optional[Path]  = None # .JSON
-        self.structure_file       : Optional[Path]  = None # .PDB
-        self.structure_files_chgd : dict[str, Path] = {} # dict of .SDF
+        self.ff_file                : Optional[Path]  = None # .OFFXML
+        self.monomer_file_uncharged : Optional[Path]  = None # .JSON
+        self.monomer_file_charged   : Optional[Path]  = None # .JSON
+        self.structure_file         : Optional[Path]  = None # .PDB
+        self.structure_files_chgd   : dict[str, Path] = {} # dict of .SDF
 
         # "Private" attributes
         self._off_topology : Topology = None
@@ -217,8 +218,8 @@ class Polymer:
             self.transfer_attr('structure_file', clone)
 
         if clone_monomers:
-            self.transfer_attr('monomer_file', clone)
-            self.transfer_attr('monomer_file_chgd', clone)
+            self.transfer_attr('monomer_file_uncharged', clone)
+            self.transfer_attr('monomer_file_charged', clone)
 
         if clone_ff:
             self.transfer_attr('ff_file', clone)
@@ -266,37 +267,45 @@ class Polymer:
         return (self.structure_file is not None)
 
     @property
-    def has_monomer_data_uncharged(self) -> bool:
-        return (self.monomer_file is not None)
+    def monomer_file(self) -> Path:
+        '''Alias for backwards-compatibility reasons'''
+        return self.monomer_file_uncharged
+    
+    @monomer_file.setter
+    def monomer_file(self, mono_path : Path) -> None:
+        '''Allow for mutability via alias'''
+        self.monomer_file_uncharged = mono_path
+
+    @property
+    def has_monomer_info_uncharged(self) -> bool:
+        return (self.monomer_file_uncharged is not None)
     
     @property
-    def has_monomer_data_charged(self) -> bool:
-        return (self.monomer_file_chgd is not None)
+    def has_monomer_info_charged(self) -> bool:
+        return (self.monomer_file_charged is not None)
 
     @property
-    def has_monomer_data(self) -> bool:
+    def has_monomer_info(self) -> bool:
         '''Checking if ANY monomer file is present (charged or not)'''
-        # return any(self.monomer_file, self.monomer_file_chgd)
-        return (self.has_monomer_data_uncharged or self.has_monomer_data_charged)
+        # return any(self.monomer_file_uncharged, self.monomer_file_charged)
+        return (self.has_monomer_info_uncharged or self.has_monomer_info_charged)
 
     @property
-    def monomer_data_uncharged(self) -> dict[str, Any]:
+    def monomer_info_uncharged(self) -> MonomerInfo:
         '''Load monomer information from file'''
-        if not self.has_monomer_data_uncharged:
+        if not self.has_monomer_info_uncharged:
             raise MissingMonomerDataUncharged(f'No monomer file exists for {self.mol_name}')
 
-        with self.monomer_file.open('r') as json_file: 
-            return json.load(json_file, object_hook=unserialize_monomer_json)
-    monomer_data = monomer_data_uncharged # alias for backwards compatibility
+        return MonomerInfo.from_file(self.monomer_file_uncharged)
+    monomer_info = monomer_info_uncharged # alias for backwards compatibility
     
     @property
-    def monomer_data_charged(self) -> dict[str, Any]:
+    def monomer_info_charged(self) -> MonomerInfo:
         '''Load monomer information with charges from file'''
-        if not self.has_monomer_data_charged:
+        if not self.has_monomer_info_charged:
             raise MissingMonomerDataCharged(f'No monomer file with charges exists for {self.mol_name}')
 
-        with self.monomer_file_chgd.open('r') as json_file: 
-            return json.load(json_file, object_hook=unserialize_monomer_json)
+        return MonomerInfo.from_file(self.monomer_file_charged)
 
     @property
     def forcefield(self) -> ForceField:
@@ -338,7 +347,7 @@ class Polymer:
 # OpenFF MOLECULE PROPERTIES
     def off_topology_matched(self, strict : bool=True, verbose : bool=False, chgd_monomers : bool=False, topo_only : bool=True) -> tuple[Topology, Optional[list[SubstructSummary]], Optional[bool]]:
         '''Performs a monomer substructure match and returns the resulting OpenFF Topology'''
-        monomer_path = self.monomer_file_chgd if chgd_monomers else self.monomer_file
+        monomer_path = self.monomer_file_charged if chgd_monomers else self.monomer_file_uncharged
         assert(self.structure_file.exists())
         assert(monomer_path.exists())
 
@@ -404,7 +413,7 @@ class Polymer:
         '''Generate an OFF force field with molecule-specific (and solvent specific, if applicable) Library Charges appended'''
         LOGGER.info(f'Generating Force Field file with Library Charges for "{self.mol_name}"')
         ff_path = self.FF/f'{self.mol_name}.offxml' # path to output library charges
-        forcefield, lib_chgs = write_lib_chgs_from_mono_data(self.monomer_data_charged, xml_src, output_path=ff_path)
+        forcefield, lib_chgs = write_lib_chgs_from_mono_data(self.monomer_info_charged, xml_src, output_path=ff_path)
 
         if self.solvent is not None:
             forcefield = ForceField(ff_path, self.solvent.forcefield_file, allow_cosmetic_attributes=True) # use both the polymer-specific xml and the solvent FF xml to make hybrid forcefield
@@ -495,17 +504,18 @@ class Polymer:
     def create_charged_monomer_file(self, residue_charges : ResidueChargeMap):
         '''Create a new copy of the current monomer file with residue-wise mapping of substructure id to charges'''
         LOGGER.warning('Generating new monomer JSON file with monomer-averaged charges')
-        if self.solvent is not None and self.solvent.charges is not None: # ensure solvent "monomer" charge entries are also recorded - explicit check for NoneType in case of empty dicts
-            residue_charges = {**residue_charges, **self.solvent.monomer_json_data['charges']} 
-        chgd_monomer_data = {**self.monomer_data_uncharged} # load uncharged monomer_data and create copy - TOSELF : this variable name is confusing but is correct (will be charged subsequently)
-        chgd_monomer_data['charges'] = residue_charges
+        chgd_monomer_info = MonomerInfo( # create new monomer info object with the provided library charges
+            monomers=self.monomer_info.monomers,
+            charges=residue_charges
+        )
 
-        chgd_mono_path = self.monomer_file.with_name(f'{self.mol_name}_charged.json')
-        with chgd_mono_path.open('w') as chgd_json:
-            json.dump(chgd_monomer_data, chgd_json, indent=4)
+        if (self.solvent is not None) and (self.solvent.charges is not None): # ensure solvent "monomer" charge entries are also recorded for matching purposes
+            chgd_monomer_info += self.solvent.monomer_info # inject molecule info from solvent
+
+        chgd_mono_path = self.monomer_file_uncharged.with_name(f'{self.mol_name}_charged.json')
+        chgd_monomer_info.to_file(chgd_mono_path) # write to new file for future reference
+        self.monomer_file_charged = chgd_mono_path # record path to new json file only AFTER write is successful
         LOGGER.info(f'Generated new monomer file for "{self.mol_name}" with monomer-averaged charge entries')
-
-        self.monomer_file_chgd = chgd_mono_path # record path to new json file
 
     @update_checkpoint
     def generate_residue_charges(self, charge_method : str) -> ResidueChargeMap:
@@ -514,19 +524,19 @@ class Polymer:
         LOGGER.info(f'Averaging {charge_method} charges over {self.mol_name} residues')
         return get_averaged_residue_charges(
             cmol=self.charged_offmol(charge_method), # TODO : add check to ensure this ISN'T and averaging method
-            monomer_info=self.monomer_data
+            monomer_info=self.monomer_info
         )
 
     @update_checkpoint
     def residue_charges(self, averaging_charge_method: str='ABE10_exact', overwrite_charged_monomer_file : bool=False) -> dict[str, ResidueChargeMap]:
         '''Return a residue-name-keyed dict of atomic partial charges by substructure ID within a residue'''
-        if self.has_monomer_data_charged:
+        if self.has_monomer_info_charged:
             LOGGER.info(f'Found charged JSON, loading averaged charges for {self.mol_name} residues from file')
-            residue_charges = self.monomer_data_charged['charges']
+            residue_charges = self.monomer_info_charged.charges
         else:
             residue_charges = self.generate_residue_charges(averaging_charge_method)
         
-        if (not self.has_monomer_data_charged) or overwrite_charged_monomer_file: # TOSELF : this is separate from the above clauses as it might be called regardless of existing charges during overwrite
+        if (not self.has_monomer_info_charged) or overwrite_charged_monomer_file: # TOSELF : this is separate from the above clauses as it might be called regardless of existing charges during overwrite
             self.create_charged_monomer_file(residue_charges)
 
         return residue_charges
@@ -534,7 +544,7 @@ class Polymer:
     def obtain_partial_charges(self, chg_params : ChargingParameters) -> None:
         '''Ensure a Polymer has all partial charge sets'''
         # 0) LOAD MOLECULE AND TOPOLOGY, ATTEMPT TO APPLY LIBRARY CHARGES
-        if not self.has_monomer_data:
+        if not self.has_monomer_info:
             raise FileExistsError(f'No monomer JSONs found for {self.mol_name}')
 
         # 1) ENSURING CHARGES AND RELATED FILES FOR ALL BASE CHARGING METHODS EXIST
@@ -592,8 +602,8 @@ class Polymer:
         return population_method
 
     # TOSELF : need to explicitly call update_checkpoint (without decorator syntax) due to annoying internal namespace restrictions
-    populate_pdb = update_checkpoint(_file_population_factory(file_name_affix='.pdb', subdir_name='structures', targ_attr='structure_file', desc='structure'))
-    populate_monomers = update_checkpoint(_file_population_factory(file_name_affix='.json', subdir_name='monomers', targ_attr='monomer_file', desc='monomer'))
+    populate_pdb      = update_checkpoint(_file_population_factory(file_name_affix='.pdb' , subdir_name='structures', targ_attr='structure_file', desc='structure'))
+    populate_monomers = update_checkpoint(_file_population_factory(file_name_affix='.json', subdir_name='monomers'  , targ_attr='monomer_file_uncharged', desc='monomer'))
 
     def populate_mol_files(self, struct_dir : Path, monomer_dir : Path=None) -> None:
         '''
@@ -644,13 +654,15 @@ class Polymer:
             precision   = precision
         )
 
-        if solva_dir.has_monomer_data: # this will be copied over during the cloning process (ensure "clone_monomers" flag is set)
-            solvated_mono_data = {**solva_dir.monomer_data}      # note that this is explicitly UNCHARGED monomer data
-            for field, values in solvated_mono_data.items():     # this merge strategy ensures solvent data does not overwrite or append extraneous data
-                values.update(solvent.monomer_json_data[field])  # specifically, charges will not be written to an uncharged json (which would screw up graph match and load)
+        if solva_dir.has_monomer_info_uncharged: # inject solvent into uncharged monomer file, if present
+            solv_mono_data_unchg = solva_dir.monomer_info_uncharged
+            solv_mono_data_unchg += solvent.monomer_info 
+            solv_mono_data_unchg.to_file(solva_dir.monomer_file_uncharged) # overwrite monomer file with augmented monomer data
 
-            with solva_dir.monomer_file.open('w') as solv_mono_file:
-                json.dump(solvated_mono_data, solv_mono_file, indent=4)
+        if solva_dir.has_monomer_info_charged: # inject solvent into uncharged monomer file, if present
+            solv_mono_data_chg = solva_dir.monomer_info_charged
+            solv_mono_data_chg += solvent.monomer_info 
+            solv_mono_data_chg.to_file(solva_dir.monomer_file_charged) # overwrite monomer file with augmented monomer data
 
         solva_dir.solvent = solvent # set this only AFTER solvated files have been created
         solva_dir.to_file() # ensure checkpoint file is created for newly solvated directory
@@ -790,8 +802,8 @@ def filter_factory_by_attr(attr_name : str, condition : Callable[[Any], bool]=bo
 
 identity          = lambda polymer : True # no filter, return all polymers (or conversely None if non-inclusive)
 has_sims          = filter_factory_by_attr('completed_sims')
-has_monomers      = filter_factory_by_attr('has_monomer_data')
-has_monomers_chgd = filter_factory_by_attr('has_monomer_data_charged')
+has_monomers      = filter_factory_by_attr('has_monomer_info')
+has_monomers_chgd = filter_factory_by_attr('has_monomer_info_charged')
 
 is_charged        = filter_factory_by_attr('charges')
 is_uncharged      = filter_factory_by_attr('charges', inclusive=False)
@@ -801,7 +813,7 @@ is_unsolvated     = filter_factory_by_attr('solvent', inclusive=False)
 
 is_AM1_sized      = filter_factory_by_attr('n_atoms', condition=lambda n : 0 < n <= 300)
 is_base           = lambda polymer : polymer.base_mol_name == polymer.mol_name
-# has_monomers = lambda polymer : polymer.has_monomer_data 
+# has_monomers = lambda polymer : polymer.has_monomer_info 
 # AM1_sized    = lambda polymer : 0 < polymer.n_atoms <= 300
 
 # Manager class for collections of Polymers
