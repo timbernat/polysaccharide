@@ -1,9 +1,14 @@
 '''Utilities and classes for managing ordered hierarchical collections of on-disc Polymer objects'''
 
+# Logging
+import logging
+from logging import Logger
+LOGGER = logging.getLogger(__name__)
+
 # Custom imports
+from .. import LOGGERS_MASTER
 from .. import extratypes, filetree
 from ..logutils import ProcessLogHandler
-from ..simulation.records import SimulationPaths, SimulationParameters
 
 from .representation import Polymer
 from . import filters
@@ -12,15 +17,10 @@ from . import filters
 from typing import Any, Callable, Iterable, Optional, TypeAlias, Union
 
 from ..solvation.solvent import Solvent
-SimDirFilter : TypeAlias = Callable[[SimulationPaths, SimulationParameters], bool]
+PolymerFunction : TypeAlias = Callable[[Polymer, logging.Logger, Any], None]
 
 # File I/O
 from pathlib import Path
-
-# Logging
-import logging
-from logging import Logger
-LOGGER = logging.getLogger(__name__)
 
 
 # Manager class for collections of Polymers
@@ -73,7 +73,7 @@ class PolymerManager:
             return ret_val
         return update_fn
     
-    def logging_wrapper(self, loggers : Union[Logger, list[Logger]], proc_name : Optional[str]=None, filters : Optional[Union[filters.MolFilter, Iterable[filters.MolFilter]]]=None) -> Callable[[Callable], Callable]: # NOTE : this is deliberately NOT a staticmethod
+    def logging_wrapper(self, proc_name : Optional[str]=None, filters : Optional[Union[filters.MolFilter, Iterable[filters.MolFilter]]]=None, loggers : Union[Logger, list[Logger]]=LOGGERS_MASTER) -> Callable[[Callable], Callable]: # NOTE : this is deliberately NOT a staticmethod
         '''Decorator for wrapping an action over a polymer into a logged loop over all present polymers
         Can optionally specify a set of filters to only apply the action to a subset of the polymers present
         Logs generated at both the individual polymer level and the global Manager level (messages get passed upwards)'''
@@ -83,13 +83,13 @@ class PolymerManager:
 
         # TODO : guarantee that the local LOGGER is always present, regardless of the logger(s) passed
 
-        def logging_decorator(funct : Callable[[Polymer, Any], None]) -> Callable[..., Any]:
+        def logging_decorator(funct : PolymerFunction) -> Callable[..., Any]:
             def wrapper(*args, **kwargs) -> None:
                 with ProcessLogHandler(filedir=self.log_dir, loggers=loggers, proc_name=proc_name, timestamp=True) as msf_handler:
                     for i, (mol_name, polymer) in enumerate(sample_dirs.items()):
                         LOGGER.info(f'Current molecule: "{mol_name}" ({i + 1}/{len(sample_dirs)})') # +1 converts to more human-readable 1-index for step count
                         with msf_handler.subhandler(filedir=polymer.logs, loggers=loggers, proc_name=f'{proc_name} for {mol_name}', timestamp=True) as subhandler: # also log actions to individual Polymers
-                            funct(polymer, *args, **kwargs)
+                            funct(polymer, subhandler.personal_logger, *args, **kwargs)
             return wrapper
         return logging_decorator
     
