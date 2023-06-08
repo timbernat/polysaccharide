@@ -1,6 +1,5 @@
 # Custom imports
 from .. import extratypes, general, filetree
-from ..extratypes import MonomerInfo
 from ..logutils import timestamp_now, extract_time
 from ..solvation.packmol import packmol_solvate_wrapper
 
@@ -15,6 +14,8 @@ from ..molutils.rdmol.rdcompare import compare_chgd_rdmols
 from ..molutils.rdmol.rdprops import assign_ordered_atom_map_nums
 
 from .exceptions import *
+# from .monomer import MonomerInfo
+from ..extratypes import MonomerInfo
 
 # Typing and subclassing
 from typing import Any, Callable, ClassVar, Iterable, Optional, TypeAlias, Union
@@ -67,7 +68,6 @@ class Polymer:
         'structures',
         'monomers',
         'SDF',
-        'FF',
         'MD',
         'checkpoint',
         'logs'
@@ -89,7 +89,6 @@ class Polymer:
         self.charges : dict[str, ndarray[float]] = {}
         self.charge_method : str = None
         
-        self.ff_file                : Optional[Path]  = None # .OFFXML
         self.monomer_file_uncharged : Optional[Path]  = None # .JSON
         self.monomer_file_charged   : Optional[Path]  = None # .JSON
         self.structure_file         : Optional[Path]  = None # .PDB
@@ -166,7 +165,7 @@ class Polymer:
             LOGGER.info(f'Copied attribute {attr_name} from {self.mol_name} to {other.mol_name}')
 
     def clone(self, dest_dir : Optional[Path]=None, clone_name : Optional[str]=None, exclusion : Optional[float]=None, clone_solvent : bool=True,
-              clone_structures : bool=False, clone_monomers : bool=True, clone_ff : bool=True, clone_charges : bool=False, clone_sims : bool=False) -> 'Polymer':
+              clone_structures : bool=False, clone_monomers : bool=True, clone_charges : bool=False, clone_sims : bool=False) -> 'Polymer':
         '''
         Create a copy of a Polymer in a specified directory with a new name, updating file references accordingly
         If neither a new Path nor name are specified, will default to cloning in the same parent directory with "_clone" affixed to self's name
@@ -202,9 +201,6 @@ class Polymer:
         if clone_monomers:
             self.transfer_attr('monomer_file_uncharged', clone)
             self.transfer_attr('monomer_file_charged', clone)
-
-        if clone_ff:
-            self.transfer_attr('ff_file', clone)
 
         if clone_charges:
             self.transfer_attr('charges', clone)
@@ -289,12 +285,6 @@ class Polymer:
 
         return MonomerInfo.from_file(self.monomer_file_charged)
 
-    @property
-    def forcefield(self) -> ForceField:
-        if self.ff_file is None:
-            raise MissingForceFieldData
-        return ForceField(self.ff_file, allow_cosmetic_attributes=True)
-        
 # RDKit PROPERTIES 
     @property
     def rdmol_topology(self) -> RDMol:
@@ -388,26 +378,6 @@ class Polymer:
             self.to_file() # not using "update_checkpoint" decorator here since attr write happens only once, and to avoid interaction with "property" 
         return self._offmol_unmatched
     offmol_unmatched = largest_offmol_unmatched # alias for simplicity
-
-# OpenFF FORCEFIELD PROPERTIES
-    @update_checkpoint
-    def create_FF_file(self, xml_src : Path, return_lib_chgs : bool=False) -> tuple[ForceField, Optional[list[LibraryChargeHandler]]]:
-        '''Generate an OFF force field with molecule-specific (and solvent specific, if applicable) Library Charges appended'''
-        LOGGER.info(f'Generating Force Field file with Library Charges for "{self.mol_name}"')
-        ff_path = self.FF/f'{self.mol_name}.offxml' # path to output library charges
-        forcefield, lib_chgs = write_lib_chgs_from_mono_data(self.monomer_info_charged, xml_src, output_path=ff_path)
-
-        if self.solvent is not None:
-            forcefield = ForceField(ff_path, self.solvent.forcefield_file, allow_cosmetic_attributes=True) # use both the polymer-specific xml and the solvent FF xml to make hybrid forcefield
-            forcefield.to_file(ff_path)
-            LOGGER.info(f'Detected solvent "{self.solvent.name}", merged solvent and molecule force field')
-
-        self.ff_file = ff_path # ensure change is reflected in directory info
-        LOGGER.info(f'Successfully generated forcefield file')
-
-        if return_lib_chgs:
-            return forcefield, lib_chgs
-        return forcefield
     
 # CHARGING
     @update_checkpoint
@@ -543,10 +513,6 @@ class Polymer:
         avg_chgr.set_residue_charges(residue_charges)
         self.assert_charges_for(avg_chgr, return_cmol=False)
 
-        # 3) GENERATE NEW FF XML IF NEEDED
-        if (self.ff_file is None) or chg_params.overwrite_ff_xml: # can only reach if a charged monomer json already exists
-            forcefield = self.create_FF_file(xml_src=chg_params.base_ff_path, return_lib_chgs=True)
-
     # Charge visualization
     def compare_charges(self, charge_method_1 : str, charge_method_2 : str, *args, **kwargs) -> tuple[Figure, Axes]:
         '''Plot a heat map showing the atomwise discrepancies in partial charges between any pair of registered charge sets'''
@@ -620,7 +586,6 @@ class Polymer:
             clone_solvent=False,
             clone_structures=True,
             clone_monomers=True,
-            clone_ff=True,
             clone_charges=False,
             clone_sims=False
         ) 
@@ -705,15 +670,20 @@ class Polymer:
 
         return sim_dir
     
-    def interchange(self, charge_method : str, periodic : bool=True):
+    def interchange(self, forcefield_path : Path, charge_method : str, periodic : bool=True):
         '''Create an Interchange object for a SMIRNOFF force field using internal structural files'''
         off_topology = self.off_topology_matched() # self.off_topology
         if periodic: # set box vector to allow for periodic simulation (will be non-periodic if polymer box vectors are unset i.e. NoneType)
             off_topology.box_vectors = self.box_vectors.in_units_of(nanometer) 
-        self.assign_charges_by_lookup(charge_method) # assign relevant charges prior to returning molecule
   
-        LOGGER.info(f'Creating SMIRNOFF Interchange for "{self.mol_name}"')
-        return Interchange.from_smirnoff(force_field=self.forcefield, topology=off_topology, charge_from_molecules=[self.offmol]) # package FF, topology, and molecule charges together and ship out
+        if self.solvent is None:
+            forcefield = ForceField(forcefield_path) #, allow_cosmetic_attributes=True)
+        else:
+            forcefield = ForceField(forcefield_path, self.solvent.forcefield_file) #, allow_cosmetic_attributes=True)
+
+        self.assign_charges_by_lookup(charge_method) # assign relevant charges prior to returning molecule
+        LOGGER.info(f'Creating SMIRNOFF Interchange for "{self.mol_name}" with forcefield "{forcefield_path.stem}"')
+        return Interchange.from_smirnoff(force_field=forcefield, topology=off_topology, charge_from_molecules=[self.offmol]) # package FF, topology, and molecule charges together and ship out
         
     def run_simulation(self, sim_params : SimulationParameters) -> None:
         '''Run OpenMM simulation according to a set of predefined simulation parameters'''
