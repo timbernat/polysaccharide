@@ -3,8 +3,7 @@ from .. import extratypes, general, filetree
 from ..logutils import timestamp_now, extract_time
 from ..solvation.packmol import packmol_solvate_wrapper
 
-from ..charging.averaging import get_averaged_residue_charges, write_lib_chgs_from_mono_data, AveragingCharger
-from ..charging.application import load_matched_charged_molecule, CHARGER_REGISTRY, ChargingParameters
+from ..charging.application import load_matched_charged_molecule
 
 from ..simulation.records import SimulationPaths, SimulationParameters
 from ..simulation.execution import run_simulation
@@ -14,17 +13,17 @@ from ..molutils.rdmol.rdcompare import compare_chgd_rdmols
 from ..molutils.rdmol.rdprops import assign_ordered_atom_map_nums
 
 from .exceptions import *
-# from .monomer import MonomerInfo
-from ..extratypes import MonomerInfo
+from .monomer import MonomerInfo
 
 # Typing and subclassing
 from typing import Any, Callable, ClassVar, Iterable, Optional, TypeAlias, Union
 from mdtraj import Trajectory
 from numpy import ndarray
+from matplotlib.pyplot import Figure, Axes
 
 from ..charging.application import MolCharger
 from ..solvation.solvent import Solvent
-from ..extratypes import SubstructSummary, ResidueChargeMap, Figure, Axes
+from ..extratypes import SubstructSummary, ResidueChargeMap, RDMol
 SimDirFilter : TypeAlias = Callable[[SimulationPaths, SimulationParameters], bool]
 
 # File I/O
@@ -37,15 +36,12 @@ import pickle
 import logging
 LOGGER = logging.getLogger(__name__)
 
-# Cheminformatics
+# Cheminformatics and Molecular Dynamics
 from rdkit import Chem
-from rdkit.Chem.rdchem import Mol as RDMol
 
-# Molecular Dynamics
 from openff.toolkit import ForceField
 from openff.interchange import Interchange
 from openff.toolkit.topology import Topology, Molecule
-from openff.toolkit.typing.engines.smirnoff.parameters import LibraryChargeHandler
 
 from openmm.unit import angstrom, nanometer
 
@@ -436,7 +432,23 @@ class Polymer:
         return load_matched_charged_molecule(self.structure_files_chgd[charge_method], assume_ordered=True)
     charged_offmol = charged_offmol_from_sdf # alias for convenience
 
-    # Charge assignment and verification
+    @update_checkpoint
+    def create_charged_monomer_file(self, residue_charges : ResidueChargeMap):
+        '''Create a new copy of the current monomer file with residue-wise mapping of substructure id to charges'''
+        LOGGER.warning('Generating new monomer JSON file with monomer-averaged charges')
+        chgd_monomer_info = MonomerInfo( # create new monomer info object with the provided library charges
+            monomers=self.monomer_info_uncharged.monomers,
+            charges=residue_charges
+        )
+
+        if (self.solvent is not None) and (self.solvent.charges is not None): # ensure solvent "monomer" charge entries are also recorded for matching purposes
+            chgd_monomer_info += self.solvent.monomer_info # inject molecule info from solvent
+
+        chgd_mono_path = self.monomer_file_uncharged.with_name(f'{self.mol_name}_charged.json')
+        chgd_monomer_info.to_file(chgd_mono_path) # write to new file for future reference
+        self.monomer_file_charged = chgd_mono_path # record path to new json file only AFTER write is successful
+        LOGGER.info(f'Generated new monomer file for "{self.mol_name}" with monomer-averaged charge entries')
+
     def assert_charges_for(self, charger : MolCharger, strict : bool=True, verbose : bool=False, return_cmol : bool=True) -> Optional[Molecule]:
         '''Return charged molecule associated with a particular charger's method
         If not already extant, will generate new charge sets and SDFs'''
@@ -452,67 +464,6 @@ class Polymer:
         if return_cmol:
             return cmol
     
-    @update_checkpoint
-    def create_charged_monomer_file(self, residue_charges : ResidueChargeMap):
-        '''Create a new copy of the current monomer file with residue-wise mapping of substructure id to charges'''
-        LOGGER.warning('Generating new monomer JSON file with monomer-averaged charges')
-        chgd_monomer_info = MonomerInfo( # create new monomer info object with the provided library charges
-            monomers=self.monomer_info.monomers,
-            charges=residue_charges
-        )
-
-        if (self.solvent is not None) and (self.solvent.charges is not None): # ensure solvent "monomer" charge entries are also recorded for matching purposes
-            chgd_monomer_info += self.solvent.monomer_info # inject molecule info from solvent
-
-        chgd_mono_path = self.monomer_file_uncharged.with_name(f'{self.mol_name}_charged.json')
-        chgd_monomer_info.to_file(chgd_mono_path) # write to new file for future reference
-        self.monomer_file_charged = chgd_mono_path # record path to new json file only AFTER write is successful
-        LOGGER.info(f'Generated new monomer file for "{self.mol_name}" with monomer-averaged charge entries')
-
-    @update_checkpoint
-    def generate_residue_charges(self, charge_method : str) -> ResidueChargeMap:
-        '''Obtain residue-averaged substructure charge maps for a stored set of charges
-        Will raise KeyError if the specified charges are not registered'''
-        LOGGER.info(f'Averaging {charge_method} charges over {self.mol_name} residues')
-        return get_averaged_residue_charges(
-            cmol=self.charged_offmol(charge_method), # TODO : add check to ensure this ISN'T and averaging method
-            monomer_info=self.monomer_info
-        )
-
-    @update_checkpoint
-    def residue_charges(self, averaging_charge_method: str='ABE10_exact', overwrite_charged_monomer_file : bool=False) -> dict[str, ResidueChargeMap]:
-        '''Return a residue-name-keyed dict of atomic partial charges by substructure ID within a residue'''
-        if self.has_monomer_info_charged:
-            LOGGER.info(f'Found charged JSON, loading averaged charges for {self.mol_name} residues from file')
-            residue_charges = self.monomer_info_charged.charges
-        else:
-            residue_charges = self.generate_residue_charges(averaging_charge_method)
-        
-        if (not self.has_monomer_info_charged) or overwrite_charged_monomer_file: # TOSELF : this is separate from the above clauses as it might be called regardless of existing charges during overwrite
-            self.create_charged_monomer_file(residue_charges)
-
-        return residue_charges
-    
-    def obtain_partial_charges(self, chg_params : ChargingParameters) -> None:
-        '''Ensure a Polymer has all partial charge sets'''
-        # 0) LOAD MOLECULE AND TOPOLOGY, ATTEMPT TO APPLY LIBRARY CHARGES
-        if not self.has_monomer_info:
-            raise FileExistsError(f'No monomer JSONs found for {self.mol_name}')
-
-        # 1) ENSURING CHARGES AND RELATED FILES FOR ALL BASE CHARGING METHODS EXIST
-        for chg_method in chg_params.charge_methods:
-            chgr = CHARGER_REGISTRY[chg_method]()
-            self.assert_charges_for(chgr, return_cmol=False)
-            
-        # 2) GENERATE RESIDUE-AVERAGED LIBRARY CHARGES FROM THE CHARGE SET OF CHOICE
-        avg_chgr = AveragingCharger()
-        residue_charges = self.residue_charges(
-            averaging_charge_method=chg_params.averaging_charge_method,
-            overwrite_charged_monomer_file=chg_params.overwrite_chg_mono
-        )
-        avg_chgr.set_residue_charges(residue_charges)
-        self.assert_charges_for(avg_chgr, return_cmol=False)
-
     # Charge visualization
     def compare_charges(self, charge_method_1 : str, charge_method_2 : str, *args, **kwargs) -> tuple[Figure, Axes]:
         '''Plot a heat map showing the atomwise discrepancies in partial charges between any pair of registered charge sets'''
