@@ -13,11 +13,11 @@ from mbuild.lib.recipes.polymer import Polymer as MBPolymer
 from rdkit import Chem
 
 from . import abmono
-from ..rdmol import rdprops
+from ..molutils.rdmol import rdprops
 
 # Typing and subclassing
 from .exceptions import SubstructMatchFailedError
-from ...extratypes import ResidueSmarts
+from ..extratypes import ResidueSmarts
 
 
 def mbmol_from_mono_smarts(SMARTS : str) -> tuple[Compound, list[int]]:

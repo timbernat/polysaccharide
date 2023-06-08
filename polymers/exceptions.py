@@ -1,5 +1,14 @@
 '''Custom Exceptions specific to Polymers and related objects'''
 
+class SubstructMatchFailedError(Exception):
+    pass
+
+class InsufficientChainLengthError(Exception):
+    pass
+
+class ExcessiveChainLengthError(Exception):
+    pass
+
 class AlreadySolvatedError(Exception):
     pass
 

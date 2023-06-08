@@ -10,8 +10,8 @@ import numpy as np
 
 # Typing and subclassing
 from .exceptions import InsufficientChainLengthError
-from ..rdmol import rdprops
-from ...extratypes import ResidueSmarts
+from ..molutils.rdmol import rdprops
+from ..extratypes import ResidueSmarts
 
 # Cheminformatics
 from rdkit import Chem
