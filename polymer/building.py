@@ -12,7 +12,7 @@ from mbuild.lib.recipes.polymer import Polymer as MBPolymer
 # Monomer information
 from rdkit import Chem
 
-from . import abmono
+from . import monomer
 from ..molutils.rdmol import rdprops
 
 # Typing and subclassing
@@ -49,12 +49,12 @@ def build_linear_polymer(monomer_smarts : ResidueSmarts, DOP : int, add_Hs : boo
     for (resname, SMARTS) in monomer_smarts.items():
         mb_monomer, port_ids = mbmol_from_mono_smarts(SMARTS)
         
-        if abmono.is_term_by_smarts(SMARTS):
+        if monomer.is_term_by_smarts(SMARTS):
             chain.add_end_groups(compound=mb_monomer, index=port_ids[0], label=term_labels.pop(), duplicate=False)
         else:
             chain.add_monomer(compound=mb_monomer, indices=port_ids)
 
-    LOGGER.info(f'Building linear polymer chain with {DOP} monomers ({abmono.estimate_chain_len(monomer_smarts, DOP)} atoms)')
+    LOGGER.info(f'Building linear polymer chain with {DOP} monomers ({monomer.estimate_chain_len(monomer_smarts, DOP)} atoms)')
     chain.build(DOP - 2, add_hydrogens=add_Hs) # "-2" is to account for term groups (in mbuild, "n" is the number of times to replicate just the middle monomers)
     for atom in chain.particles():
         atom.charge = 0.0 # initialize all atoms as being uncharged (gets risk of pesky blocks of warnings)
@@ -63,5 +63,5 @@ def build_linear_polymer(monomer_smarts : ResidueSmarts, DOP : int, add_Hs : boo
 
 def build_linear_polymer_limited(monomer_smarts : ResidueSmarts, max_chain_len : int, **build_args):
     '''Build a linear polymer which is no longer than the specified chain length'''
-    DOP = abmono.estimate_max_DOP(monomer_smarts, max_chain_len=max_chain_len) # will raise error if length is unsatisfiable
+    DOP = monomer.estimate_max_DOP(monomer_smarts, max_chain_len=max_chain_len) # will raise error if length is unsatisfiable
     return build_linear_polymer(monomer_smarts, DOP=DOP, **build_args)
