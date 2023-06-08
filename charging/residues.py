@@ -2,8 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
 from networkx import Graph
-from rdkit.Chem.rdchem import Mol as RDMol
-from ..extratypes import ChargeMap
+from ..extratypes import ChargeMap, RDMol
 
 
 # Interface for distributing non-integral monomer charges

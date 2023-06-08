@@ -42,7 +42,7 @@ class ChargingParameters(JSONifiable):
         '''For de-serializing JSON-compatible data into a form that the __init__method can accept'''
         unser_jdict = {}
         for key, value in ser_jdict.items():
-            if key == 'base_ff_path':
+            if key == 'base_ff_path': # TODO : change (or fully deprecate) this, as this attribute no longer exists; decode here is not harmful, but just unnecessary
                 unser_jdict[key] = Path(value)
             else:
                 unser_jdict[key] = value

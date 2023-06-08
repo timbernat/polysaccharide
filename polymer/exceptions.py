@@ -12,6 +12,9 @@ class ExcessiveChainLengthError(Exception):
 class AlreadySolvatedError(Exception):
     pass
 
+class ChargeMismatchError(Exception):
+    pass
+
 class MissingStructureData(Exception):
     pass
 
