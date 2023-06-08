@@ -11,7 +11,7 @@ from typing import Any
 from abc import ABC, abstractmethod, abstractproperty
 from dataclasses import dataclass
 
-from . import TOOLKITS, OPENFF_DIR
+from .. import TOOLKITS
 from ..filetree import JSONifiable, JSONSerializable
 
 from openff.toolkit.topology.molecule import Molecule
@@ -21,20 +21,9 @@ from openff.toolkit.topology.molecule import Molecule
 @dataclass
 class ChargingParameters(JSONifiable):
     '''For recording the parameters used to assign a Polymer sets of partial charges'''
-    overwrite_ff_xml   : bool
     overwrite_chg_mono : bool
-
-    base_ff_name : str 
     charge_methods : list[str]    # all charging methods which should be applied
     averaging_charge_method : str # method on which to base average charge calculations
-
-    @property
-    def base_ff_path(self) -> Path:
-        '''Returns the path to the official OpenFF Forcefield named in the parameter set'''
-        ff_path = OPENFF_DIR / self.base_ff_name
-        assert(ff_path.exists()) # make sure the forcefield is genuine
-        
-        return ff_path
 
     @staticmethod
     def serialize_json_dict(unser_jdict : dict[Any, Any]) -> dict[str, JSONSerializable]:

@@ -12,7 +12,9 @@ LOGGER = logging.getLogger(__name__)
 # Typing and subclassing
 from dataclasses import dataclass, field
 from typing import Any
+
 from ..filetree import JSONSerializable, JSONifiable
+from .. import OPENFF_DIR
 
 # Units, quantities, and dimensions
 import openmm.unit
@@ -30,8 +32,9 @@ class SimulationParameters(JSONifiable):
 
     ensemble : str
     periodic : bool = True
-    report_to_pdb : bool = False
+    forcefield_name : str = ''
 
+    report_to_pdb : bool = False
     reported_state_data : dict[str, bool] = field(default_factory=dict)
 
     timestep    : Quantity = (2 * femtosecond)
@@ -60,6 +63,14 @@ class SimulationParameters(JSONifiable):
     def time_points(self) -> np.ndarray[int]:
         '''An array of the time data points represented by the given sampling rate and sim time'''
         return (np.arange(0, self.num_steps, step=self.record_freq) + self.record_freq)* self.timestep # extra offset by recording frequency need to align indices (not 0-indexed)
+
+    @property
+    def forcefield_path(self) -> Path:
+        '''Returns the path to the official OpenFF Forcefield named in the parameter set'''
+        ff_path = OPENFF_DIR / self.forcefield_name
+        assert(ff_path.exists()) # make sure the forcefield requested genuinely exists
+        
+        return ff_path
 
     # JSON serialization
     @staticmethod
