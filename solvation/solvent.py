@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..extratypes import MonomerInfo
+from ..polymer.monomer import MonomerInfo
 from openmm.unit import AVOGADRO_CONSTANT_NA
 
 

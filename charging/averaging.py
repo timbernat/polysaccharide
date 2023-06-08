@@ -8,7 +8,8 @@ from ..general import optional_in_place
 # Typing and subclassing
 from ..general import Accumulator
 from .residues import ChargedResidue
-from ..extratypes import AtomIDMap, MonomerInfo, ResidueSmarts, ResidueChargeMap
+from ..extratypes import AtomIDMap, ResidueSmarts, ResidueChargeMap
+from ..polymer.monomer import MonomerInfo
 
 # logging setup - will feed up to charging module parent logger
 import logging
