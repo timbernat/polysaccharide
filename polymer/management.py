@@ -180,8 +180,8 @@ class PolymerManager:
             polymer.purge_sims(really=really)
 
 @dataclass
-class NameFilterBuffer:
-    '''Class for eliminating boilerplate when filtering Polymer collection-based scripts'''
+class MolFilterBuffer:
+    '''Class for eliminating boilerplate when filtering Polymer collection-based scripts via argparse'''
     molecules : Optional[Iterable[str]] = None # base names of molecules to select for
     solvent   : Optional[bool] = None # whether to express a preference for having solvent
     charges   : Optional[bool] = None # whether to express a preference for having charges
@@ -191,11 +191,11 @@ class NameFilterBuffer:
         '''Generates list of relevant filters based on current setting'''
         filters = []
         if self.molecules: # NOTE : not explicitly checking for NoneType, as empty iterables should also be skipped
-            desired_mol = filter_factory_by_attr('base_mol_name', lambda name : name in self.molecules)
-            filters.append(desired_mol)
+            is_desired_mol = filter_factory_by_attr('base_mol_name', lambda name : name in self.molecules)
+            filters.append(is_desired_mol)
 
         if self.charges is not None:
-            filters.append(filtering.is_charged if self.solvent else filtering.is_uncharged)
+            filters.append(filtering.is_charged if self.charges else filtering.is_uncharged)
 
         if self.solvent is not None:
             filters.append(filtering.is_solvated if self.solvent else filtering.is_unsolvated)
@@ -210,7 +210,7 @@ class NameFilterBuffer:
         parser.add_argument('--charges'  , help='Set which charging status to filter for (options are "chg", "unchg", or "all", defaults to "all")' , action=BooleanOptionalAction)
 
     @classmethod
-    def from_argparse(cls, args : Namespace) -> 'NameFilterBuffer':
+    def from_argparse(cls, args : Namespace) -> 'MolFilterBuffer':
         '''Initialize from an argparse Namespace'''
         return cls(
             molecules=args.molecules,
