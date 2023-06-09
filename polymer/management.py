@@ -14,6 +14,7 @@ from .representation import Polymer
 from . import filters
 
 # Typing and Subclassing
+from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Optional, TypeAlias, Union
 
 from ..solvation.solvent import Solvent
@@ -21,6 +22,7 @@ PolymerFunction : TypeAlias = Callable[[Polymer, logging.Logger, Any], None]
 
 # File I/O
 from pathlib import Path
+from argparse import ArgumentParser, BooleanOptionalAction, Namespace
 
 
 # Manager class for collections of Polymers
@@ -175,3 +177,50 @@ class PolymerManager:
         
         for polymer in self.polymers_list:
             polymer.purge_sims(really=really)
+
+@dataclass
+class NameFilterBuffer:
+    '''Class for eliminating boilerplate when filtering Polymer collection-based scripts'''
+    molecules : Optional[Iterable[str]] = None # base names of molecules to select for
+    solvent   : Optional[bool] = None # whether to express a preference for having solvent
+    charges   : Optional[bool] = None # whether to express a preference for having charges
+        
+    @property
+    def filters(self) -> list[filters.MolFilter]:
+        '''Generates list of relevant filters based on current setting'''
+        filters = []
+        if self.molecules: # NOTE : not explicitly checking for NoneType, as empty iterables should also be skipped
+            desired_mol = filters.filter_factory_by_attr('base_mol_name', lambda name : name in self.molecules)
+            filters.append(desired_mol)
+
+        if self.charges is not None:
+            filters.append(filters.is_charged if self.solvent else filters.is_uncharged)
+
+        if self.solvent is not None:
+            filters.append(filters.is_solvated if self.solvent else filters.is_unsolvated)
+
+        return filters
+
+    @staticmethod
+    def argparse_inject(parser : ArgumentParser) -> None:
+        '''Flexible support for instantiating addition to argparse in an existing script'''
+        parser.add_argument('--molecules', help='List of molecule types (by name) to select for', nargs='+', action='store')
+        parser.add_argument('--solvent'  , help='Set which solvation type to filter for (options are "solv", "unsolv", or "all", defaults to "all")', action=BooleanOptionalAction)
+        parser.add_argument('--charges'  , help='Set which charging status to filter for (options are "chg", "unchg", or "all", defaults to "all")' , action=BooleanOptionalAction)
+
+    @classmethod
+    def from_argparse(cls, args : Namespace) -> 'NameFilterBuffer':
+        '''Initialize from an argparse Namespace'''
+        return cls(
+            molecules=args.molecules,
+            solvent=args.solvent,
+            charges=args.charges
+        )
+
+    def valid_names(self, poly_mgr : PolymerManager) -> list[str]:
+        '''Returns names of Polymers in a collection which fit all initialized criteria'''
+        return [mol_name for mol_name in poly_mgr.filtered_by(self.filters)]
+
+    def create_filter_for(self, poly_mgr : PolymerManager) -> filters.MolFilter:
+        '''Generates a filter which '''
+        return filters.filter_factory_by_attr('mol_name', condition=lambda name : name in self.valid_names(poly_mgr))
