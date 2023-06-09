@@ -11,7 +11,8 @@ from .. import extratypes, filetree
 from ..logutils import ProcessLogHandler
 
 from .representation import Polymer
-from . import filters
+from . import filtering
+from .filtering import MolFilter, filter_factory_by_attr
 
 # Typing and Subclassing
 from dataclasses import dataclass
@@ -75,12 +76,12 @@ class PolymerManager:
             return ret_val
         return update_fn
     
-    def logging_wrapper(self, proc_name : Optional[str]=None, filters : Optional[Union[filters.MolFilter, Iterable[filters.MolFilter]]]=None, loggers : Union[Logger, list[Logger]]=LOGGERS_MASTER) -> Callable[[Callable], Callable]: # NOTE : this is deliberately NOT a staticmethod
+    def logging_wrapper(self, proc_name : Optional[str]=None, filters : Optional[Union[MolFilter, Iterable[MolFilter]]]=None, loggers : Union[Logger, list[Logger]]=LOGGERS_MASTER) -> Callable[[Callable], Callable]: # NOTE : this is deliberately NOT a staticmethod
         '''Decorator for wrapping an action over a polymer into a logged loop over all present polymers
         Can optionally specify a set of filters to only apply the action to a subset of the polymers present
         Logs generated at both the individual polymer level and the global Manager level (messages get passed upwards)'''
         if filters is None:
-            filters = [filters.identity] # no filtering if not explicitly specified
+            filters = [filtering.identity] # no filtering if not explicitly specified
         sample_dirs = self.filtered_by(filters)
 
         # TODO : guarantee that the local LOGGER is always present, regardless of the logger(s) passed
@@ -120,7 +121,7 @@ class PolymerManager:
                     if polymer.completed_sims # don't report directories without simulations
         }
 
-    def filtered_by(self, filters : Union[filters.MolFilter, Iterable[filters.MolFilter]]) -> dict[str, Polymer]:
+    def filtered_by(self, filters : Union[MolFilter, Iterable[MolFilter]]) -> dict[str, Polymer]:
         '''Return name-keyed dict of all Polymers in collection which meet all of a set of filtering conditions'''
         filters = extratypes.asiterable(filters)
         return {
@@ -186,18 +187,18 @@ class NameFilterBuffer:
     charges   : Optional[bool] = None # whether to express a preference for having charges
         
     @property
-    def filters(self) -> list[filters.MolFilter]:
+    def filters(self) -> list[MolFilter]:
         '''Generates list of relevant filters based on current setting'''
         filters = []
         if self.molecules: # NOTE : not explicitly checking for NoneType, as empty iterables should also be skipped
-            desired_mol = filters.filter_factory_by_attr('base_mol_name', lambda name : name in self.molecules)
+            desired_mol = filter_factory_by_attr('base_mol_name', lambda name : name in self.molecules)
             filters.append(desired_mol)
 
         if self.charges is not None:
-            filters.append(filters.is_charged if self.solvent else filters.is_uncharged)
+            filters.append(filtering.is_charged if self.solvent else filtering.is_uncharged)
 
         if self.solvent is not None:
-            filters.append(filters.is_solvated if self.solvent else filters.is_unsolvated)
+            filters.append(filtering.is_solvated if self.solvent else filtering.is_unsolvated)
 
         return filters
 
@@ -221,6 +222,6 @@ class NameFilterBuffer:
         '''Returns names of Polymers in a collection which fit all initialized criteria'''
         return [mol_name for mol_name in poly_mgr.filtered_by(self.filters)]
 
-    def create_filter_for(self, poly_mgr : PolymerManager) -> filters.MolFilter:
+    def create_filter_for(self, poly_mgr : PolymerManager) -> MolFilter:
         '''Generates a filter which '''
-        return filters.filter_factory_by_attr('mol_name', condition=lambda name : name in self.valid_names(poly_mgr))
+        return filter_factory_by_attr('mol_name', condition=lambda name : name in self.valid_names(poly_mgr))
