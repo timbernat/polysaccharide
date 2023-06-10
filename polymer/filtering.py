@@ -2,9 +2,10 @@
 
 # Custom imports
 from .representation import Polymer
+from ..simulation.records import SimulationPaths, SimulationParameters
 
 # Typing and Subclassing
-from typing import Any, Callable
+from typing import Any, Callable, TypeAlias
 
 
 # Filtering Polymers by attributes
@@ -42,3 +43,7 @@ is_AM1_sized      = filter_factory_by_attr('n_atoms', condition=lambda n : 0 < n
 is_base           = lambda polymer : polymer.base_mol_name == polymer.mol_name
 # has_monomers = lambda polymer : polymer.has_monomer_info 
 # AM1_sized    = lambda polymer : 0 < polymer.n_atoms <= 300
+
+# Filtering simulation directories
+SimDirFilter : TypeAlias = Callable[[SimulationPaths, SimulationParameters], bool]
+has_binary_traj = lambda sim_paths, sim_params : (sim_params.report_to_pdb == False)

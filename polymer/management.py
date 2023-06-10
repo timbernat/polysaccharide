@@ -223,5 +223,5 @@ class MolFilterBuffer:
         return [mol_name for mol_name in poly_mgr.filtered_by(self.filters)]
 
     def create_filter_for(self, poly_mgr : PolymerManager) -> MolFilter:
-        '''Generates a filter which '''
+        '''Generates a filter specific to a managed collection'''
         return filter_factory_by_attr('mol_name', condition=lambda name : name in self.valid_names(poly_mgr))
