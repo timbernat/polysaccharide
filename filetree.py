@@ -59,6 +59,13 @@ def clear_dir(path : Path) -> None:
         else:
             sub_path.unlink()
 
+def default_suffix(path : Path, suffix : str) -> Path:
+    '''Asserts that a path has a suffix, appending a specified default suffix if none exists'''
+    if not path.suffix:
+        path = path.with_name(f'{path.stem}.{suffix}') # ensure charge params path has correct extension
+
+    return path
+
 def prepend_parent(path : Path, new_parent : Path) -> Path:
     '''Prepends a parent tree to an existing path'''
     return new_parent / path
