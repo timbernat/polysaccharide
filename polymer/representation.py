@@ -504,7 +504,7 @@ class Polymer:
     populate_pdb      = update_checkpoint(_file_population_factory(file_name_affix='.pdb' , subdir_name='structures', targ_attr='structure_file', desc='structure'))
     populate_monomers = update_checkpoint(_file_population_factory(file_name_affix='.json', subdir_name='monomers'  , targ_attr='monomer_file_uncharged', desc='monomer'))
 
-    def populate_mol_files(self, struct_dir : Path, monomer_dir : Path=None) -> None:
+    def populate_mol_files(self, struct_dir : Path, monomer_dir : Optional[Path]=None) -> None:
         '''
         Populates a Polymer with the relevant structural and monomer files from a shared source ("data dump") folder
         Assumes that all structure and monomer files will have the same name as the Polymer in question
@@ -517,7 +517,7 @@ class Polymer:
 
 # SOLVATION
     # doesn't need "update_checkpoint" decorator, as no own attrs are being updated
-    def _solvate(self, solvent : Solvent, template_path : Path, dest_dir : Path=None, exclusion : float=None, precision : int=4) -> None:
+    def _solvate(self, solvent : Solvent, template_path : Path, dest_dir : Optional[Path]=None, exclusion : Optional[float]=None, precision : int=4) -> None:
         '''Internal implementation for solvating with a single solvent via cloning and structure/Solvent reassignment'''
         if not self.has_structure_data:
             raise MissingStructureData
@@ -566,7 +566,7 @@ class Polymer:
         solva_dir.to_file() # ensure checkpoint file is created for newly solvated directory
         LOGGER.info('Successfully converged on solvent packing')
 
-    def solvate(self, solvents : Union[Solvent, Iterable[Solvent]], template_path : Path, dest_dir : Path=None, exclusion : float=None, precision : int=4) -> 'Polymer':
+    def solvate(self, solvents : Union[Solvent, Iterable[Solvent]], template_path : Path, dest_dir : Optional[Path]=None, exclusion : Optional[float]=None, precision : int=4) -> 'Polymer':
         '''Create a clone of a Polymer and solvate it in a box defined by the polymer's bounding box + an exclusion buffer. Can solvate with one or more solvents'''
         for solvent in extratypes.asiterable(solvents):
             if solvent is not None: # handle the case where a null solvent is passed (technically a valid Solvent for typing reasons)
