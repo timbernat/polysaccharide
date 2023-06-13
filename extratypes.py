@@ -3,6 +3,7 @@ import numpy as np
 # typing and subclassing
 from .filetree import JSONifiable
 from typing import Any, Iterable, Union
+from pathlib import Path
 from dataclasses import dataclass, field
 
 # Common matplotlib types
@@ -40,6 +41,12 @@ def asiterable(arg_val : Union[Any, Iterable[Any]]) -> Iterable[Any]:
 	if not isinstance(arg_val, Iterable):
 		arg_val = (arg_val,) # turn into single-item tuple (better for memory)
 	return arg_val
+
+def aspath(path : Union[Path, str]) -> Path:
+	'''Allow functions which expect Paths to also accept strings'''
+	if not isinstance(path, Path):
+		path = Path(path)
+	return path
 
 ## typechecking 
 def isnumeric(var: Any) -> bool:

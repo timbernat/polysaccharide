@@ -9,6 +9,7 @@ LOGGER = logging.getLogger(__name__)
 from .. import LOGGERS_MASTER
 from .. import extratypes, filetree
 from ..logutils import ProcessLogHandler
+from ..extratypes import aspath
 
 from .representation import Polymer
 from . import filtering
@@ -30,7 +31,7 @@ from argparse import ArgumentParser, BooleanOptionalAction, Namespace
 class PolymerManager:
     '''Class for organizing, loading, and manipulating collections of Polymer objects'''
     def __init__(self, collection_dir : Path):
-        self.collection_dir : Path = collection_dir
+        self.collection_dir : Path = aspath(collection_dir) # turn string into Paths, if passed inadvertently
         self.log_dir        : Path = self.collection_dir/'Logs'
         self.polymers_list  : list[Polymer] = []
 
