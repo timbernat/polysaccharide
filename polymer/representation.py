@@ -149,6 +149,7 @@ class Polymer:
 
         copyfile(file_path, new_file_path)
         setattr(other, attr_name, new_file_path)
+        other.to_file() # ensure newly set attributes are reflected in checkpoint
         LOGGER.info(f'Transferred file ref at {self.mol_name}.{attr_name} to {new_file_path}')
 
     def transfer_attr(self, attr_name : str, other : 'Polymer') -> None:
@@ -158,6 +159,7 @@ class Polymer:
             self.transfer_file_attr(attr_name, other)
         else:
             setattr(other, attr_name, copy.copy(attr)) # create copy of value to avoid shared references
+            other.to_file() # ensure newly set attributes are reflected in checkpoint
             LOGGER.info(f'Copied attribute {attr_name} from {self.mol_name} to {other.mol_name}')
 
     def clone(self, dest_dir : Optional[Path]=None, clone_name : Optional[str]=None, exclusion : Optional[float]=None, clone_solvent : bool=True,
