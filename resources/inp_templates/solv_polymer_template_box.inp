@@ -1,0 +1,18 @@
+#
+# Polymer solvated by box of solvent
+#
+
+tolerance 2.0
+
+structure $POLYMER_FILE
+  number 1 
+  fixed $XR $YR $ZR 0. 0. 0.
+  centerofmass
+end structure
+
+structure $SOLVENT_FILE
+  number $N
+  inside box 0. 0. 0. $XD $YD $ZD
+end structure
+
+output $OUTNAME.pdb

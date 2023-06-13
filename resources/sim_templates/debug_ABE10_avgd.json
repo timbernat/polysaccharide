@@ -1,0 +1,33 @@
+{
+    "total_time_value": 1,
+    "total_time_unit": "picosecond",
+    "num_samples": 100,
+    "charge_method": "ABE10_averaged",
+    "ensemble": "NPT",
+    "periodic": true,
+    "forcefield_name": "openff-2.0.0.offxml",
+    "report_to_pdb": false,
+    "reported_state_data": {
+        "step": true,
+        "time": true,
+        "potentialEnergy": true,
+        "kineticEnergy": true,
+        "totalEnergy": true,
+        "temperature": true,
+        "volume": true,
+        "density": true,
+        "progress": false,
+        "remainingTime": false,
+        "speed": true,
+        "elapsedTime": false
+    },
+    "timestep_value": 2,
+    "timestep_unit": "femtosecond",
+    "temperature_value": 300,
+    "temperature_unit": "kelvin",
+    "pressure_value": 1,
+    "pressure_unit": "atmosphere",
+    "friction_coeff_value": 1,
+    "friction_coeff_unit": "/picosecond",
+    "barostat_freq": 10
+}

@@ -1,0 +1,18 @@
+#
+# Polymer solvated by cube of water
+#
+
+tolerance 2.0
+
+structure $POLYMER_FILE
+  number 1 
+  fixed $R $R $R 0. 0. 0.
+  centerofmass
+end structure
+
+structure $SOLVENT_FILE
+  number $N
+  inside cube 0. 0. 0. $D
+end structure
+
+output $OUTNAME.pdb
