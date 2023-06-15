@@ -7,7 +7,8 @@
     "periodic": true,
     "forcefield_name": "openff_unconstrained-2.0.0.offxml",
     "affix": "debug_sim_unconstrained",
-    "report_to_pdb": false,
+    "binary_traj": true,
+    "save_state": true,
     "reported_state_data": {
         "step": true,
         "time": true,

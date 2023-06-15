@@ -1,12 +1,12 @@
 {
     "total_time_value": 1,
-    "total_time_unit": "nanosecond",
-    "num_samples": 50,
-    "charge_method": "Espaloma_AM1BCC",
-    "ensemble": "NPT",
+    "total_time_unit": "picosecond",
+    "num_samples": 100,
+    "charge_method": "ABE10_averaged",
+    "ensemble": "NVT",
     "periodic": true,
     "forcefield_name": "openff-2.0.0.offxml",
-    "affix": "pilot_espaloma",
+    "affix": "debug_sim_NVT",
     "binary_traj": true,
     "save_state": true,
     "reported_state_data": {
@@ -31,5 +31,5 @@
     "pressure_unit": "atmosphere",
     "friction_coeff_value": 1,
     "friction_coeff_unit": "/picosecond",
-    "barostat_freq": 100
+    "barostat_freq": 10
 }

@@ -46,4 +46,4 @@ is_base           = lambda polymer : polymer.base_mol_name == polymer.mol_name
 
 # Filtering simulation directories
 SimDirFilter : TypeAlias = Callable[[SimulationPaths, SimulationParameters], bool]
-has_binary_traj = lambda sim_paths, sim_params : (sim_params.report_to_pdb == False)
+has_binary_traj = lambda sim_paths, sim_params : (sim_params.binary_traj == True)

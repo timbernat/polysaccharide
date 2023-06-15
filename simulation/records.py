@@ -32,10 +32,11 @@ class SimulationParameters(JSONifiable):
 
     ensemble : str
     periodic : bool = True
-    forcefield_name : str = 'openff-2.0.0.offxml' # will be looked up in openforcefields resource module
+    forcefield_name : str = 'openff-2.0.0.offxml' # will be looked up in openforcefields resource module - uses Sage by default
 
     affix : str = '' # optional descriptive string for simulation
-    report_to_pdb : bool = False # whether to report to 
+    binary_traj : bool = True  # whether to save trajectory as compact binary (.dcd) or human-readable (.pdb) format
+    save_state  : bool = False # whether to save State or Checkpoint when updating simulation checkpoints
     reported_state_data : dict[str, bool] = field(default_factory=dict)
 
     timestep    : Quantity = (2 * femtosecond)

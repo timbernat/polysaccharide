@@ -23,9 +23,9 @@ def run_simulation(simulation : Simulation, sim_params : SimulationParameters, o
     '''
     Initializes an OpenMM simulation from a SMIRNOFF Interchange in the desired ensemble
     Creates relevant simulation files, generates Reporters for state, checkpoint, and trajectory data,
-     performs energy minimization, then integrates the trajectory for the desired number of steps
+    performs energy minimization, then integrates the trajectory for the desired number of steps
     '''
-    sim_paths = preparation.prepare_simulation_paths(output_folder, output_name, report_to_pdb=sim_params.report_to_pdb)
+    sim_paths = preparation.prepare_simulation_paths(output_folder, output_name, sim_params)
     reporters = preparation.prepare_simulation_reporters(sim_paths, sim_params)
     sim_params.to_file(sim_paths.sim_params) # TOSELF : this is not a parameters checkpoint file UPDATE, but rather the initial CREATION of the checkpoint file
     preparation.config_simulation(simulation, reporters, checkpoint_path=sim_paths.checkpoint)
@@ -35,3 +35,4 @@ def run_simulation(simulation : Simulation, sim_params : SimulationParameters, o
 
     LOGGER.info(f'Integrating {sim_params.total_time} OpenMM sim at {sim_params.temperature} and {sim_params.pressure} for {sim_params.num_steps} steps')
     simulation.step(sim_params.num_steps)
+    LOGGER.info('Simulation integration completed successfully')
