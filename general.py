@@ -1,4 +1,7 @@
 # Generic Imports
+import re
+from datetime import datetime
+
 from functools import reduce
 from operator import mul
 from copy import deepcopy
@@ -103,3 +106,19 @@ def strip_units(coords : Union[tuple, PintQuantity, OMMQuantity]) -> tuple[float
         return coords._value
 
     return coords
+
+# Date / time formatting
+@dataclass
+class Timestamp:
+    '''For storing information on date processing'''
+    fmt_str : str = '%m-%d-%Y_at_%H-%M-%S_%p'# should be formatted such that the resulting string can be safely used in a filename (i.e. no slashes)
+    regex : Union[str, re.Pattern] = re.compile(r'\d{2}-\d{2}-\d{4}_at_\d{2}-\d{2}-\d{2}_\w{2}')
+
+    def timestamp_now(self) -> str:
+        '''Return a string timestamped with the current date and time (at the time of calling)'''
+        return datetime.now().strftime(self.fmt_str)
+
+    def extract_datetime(self, timestr : str) -> datetime:
+        '''De-format a string containing a timestamp and extract just the timestamp as a datetime object'''
+        timestamps = re.search(self.regex, timestr) # pull out JUST the datetime formatting component
+        return datetime.strptime(timestamps.group(), self.fmt_str) # convert to datetime object

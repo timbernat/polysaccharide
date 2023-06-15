@@ -7,20 +7,15 @@ LOGGER_REGISTRY = lambda : logging.root.manager.loggerDict # dict of all extant 
 # Generic imports
 from pathlib import Path
 from typing import Iterable, Optional, Union
+
+# Custom Imports
+from .general import Timestamp
 from datetime import datetime
 
+
 # Date and time formatting
-DATETIME_FMT = '%m-%d-%Y_at_%H-%M-%S_%p' # formatted string which can be used in file names without error
-LOG_FORMATTER   = logging.Formatter('%(asctime)s.%(msecs)03d [%(levelname)-8s:%(module)16s:line %(lineno)-3d] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-
-def extract_time(timestamp : str) -> str:
-    '''De-format a timestamped string and extract just the timestamp'''
-    return datetime.strptime(timestamp, DATETIME_FMT)
-
-def timestamp_now(fmt_str : str=DATETIME_FMT) -> str:
-    '''Return a string timestamped with the current date and time (at the time of calling)
-    Is formatted such that the resulting string can be safely used in a filename'''
-    return datetime.now().strftime(fmt_str)
+DATETIME_FMT  = Timestamp() # formatted string which can be used in file names without error
+LOG_FORMATTER = logging.Formatter('%(asctime)s.%(msecs)03d [%(levelname)-8s:%(module)16s:line %(lineno)-3d] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 # File handling classes
 class MultiStreamFileHandler(logging.FileHandler):
@@ -120,7 +115,7 @@ class MultiStreamFileHandlerFlexible(MultiStreamFileHandler):
             # implicit "else" if no error is raised 
             filestem = proc_name.replace(' ', '_') # use process name to generate filename; change spaces to underscores for file saving
             if timestamp:
-                filestem += f'_{timestamp_now()}' 
+                filestem += f'_{DATETIME_FMT.timestamp_now()}' 
             filename = filedir / f'{filestem}.log'
 
         super().__init__(filename, mode, encoding, delay, errors, loggers, formatter, proc_name)
@@ -129,30 +124,3 @@ class MultiStreamFileHandlerFlexible(MultiStreamFileHandler):
 MSFHandler        = MultiStreamFileHandler
 MSFHandlerFlex    = MultiStreamFileHandlerFlexible
 ProcessLogHandler = MultiStreamFileHandlerFlexible # more inviting name, intended for use as default
-
-# legacy version, kept for backwards compatibility reasons        
-class MultiLogFileHandler(logging.FileHandler):
-    '''Subclass to cut down boilerplate of logfile I/O for loggers with multiple origins'''
-    def __init__(self, *args, **kwargs) -> None:
-        self._start_time = datetime.now()
-        super().__init__(*args, **kwargs)
-
-    @property
-    def runtime(self):
-        return datetime.now() - self._start_time
-
-    def add_to_loggers(self, *loggers : list[Logger]) -> None:
-        for logger in loggers:
-            logger.addHandler(self)
-
-    def remove_from_loggers(self, *loggers : list[Logger]) -> None:
-        for logger in loggers:
-            logger.removeHandler(self)
-
-def config_mlf_handler(log_path : Path, loggers : Iterable[Logger], writemode : str='a', formatter : logging.Formatter=LOG_FORMATTER) -> MultiLogFileHandler:
-    '''Further boilerplate reduction for configuring logging to file'''
-    handler = MultiLogFileHandler(log_path, mode=writemode)
-    handler.setFormatter(formatter)
-    handler.add_to_loggers(*loggers)
-
-    return handler

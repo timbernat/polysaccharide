@@ -1,6 +1,5 @@
 # Custom imports
 from .. import extratypes, general, filetree
-from ..logutils import timestamp_now, extract_time
 from ..solvation.packmol import packmol_solvate_wrapper
 
 from ..charging.application import load_matched_charged_molecule
@@ -67,6 +66,8 @@ class Polymer:
         'checkpoint',
         'logs'
     )
+
+    DATE_FMT : ClassVar[general.Timestamp] = general.Timestamp() # can set this class variable to alter date formatting
 
 # CONSTRUCTION 
     def __init__(self, parent_dir : Path, mol_name : str, exclusion : float=1*nanometer) -> None:
@@ -589,7 +590,7 @@ class Polymer:
     @property
     def chrono_sims(self) -> list[Path]:
         '''Return paths of all extant simulation subdirectories in chronological order of creation'''
-        return sorted(self.completed_sims, key=lambda path : extract_time(path.stem))
+        return sorted(self.completed_sims, key=lambda path : self.DATE_FMT.extract_datetime(path.stem))
     
     @property
     def oldest_sim_dir(self) -> Path:
@@ -615,7 +616,7 @@ class Polymer:
     
     def make_sim_dir(self, affix : Optional[str]='') -> Path:
         '''Create a new timestamped simulation results directory'''
-        sim_name = f'{affix}{"_" if affix else ""}{timestamp_now()}'
+        sim_name = f'{affix}{"_" if affix else ""}{self.DATE_FMT.timestamp_now()}'
         sim_dir = self.MD/sim_name
         sim_dir.mkdir(exist_ok=False) # will raise FileExistsError in case of overlap
         LOGGER.info(f'Created new Simulation directory "{sim_name}"')
