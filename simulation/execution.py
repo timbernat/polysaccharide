@@ -11,24 +11,20 @@ import logging
 LOGGER = logging.getLogger(__name__)
 
 # OpenForceField
-from openff.interchange import Interchange
+from openmm.app import Simulation
 
 # Custom imports
 from . import preparation
 from .records import SimulationParameters
-from .ensemble import ENSEMBLE_REGISTRY
 
 
 # Functions for actually running simulations
-def run_simulation(interchange : Interchange, sim_params : SimulationParameters, output_folder : Path, output_name : str) -> None:
+def run_simulation(simulation : Simulation, sim_params : SimulationParameters, output_folder : Path, output_name : str) -> None:
     '''
     Initializes an OpenMM simulation from a SMIRNOFF Interchange in the desired ensemble
     Creates relevant simulation files, generates Reporters for state, checkpoint, and trajectory data,
      performs energy minimization, then integrates the trajectory for the desired number of steps
     '''
-    sim_factory = ENSEMBLE_REGISTRY[sim_params.ensemble.upper()]() # case-insensitive check for simulation creators for the desired ensemble
-    simulation = sim_factory.create_simulation(interchange, sim_params=sim_params)
-
     sim_paths = preparation.prepare_simulation_paths(output_folder, output_name, report_to_pdb=sim_params.report_to_pdb)
     reporters = preparation.prepare_simulation_reporters(sim_paths, sim_params)
     sim_params.to_file(sim_paths.sim_params) # TOSELF : this is not a parameters checkpoint file UPDATE, but rather the initial CREATION of the checkpoint file
