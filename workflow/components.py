@@ -332,6 +332,11 @@ class RunSimulations(WorkflowComponent):
         self.sim_params = asiterable(sim_params) # handle singleton case
         self.sequential = sequential
 
+        if self.sequential: # perform precheck to ensure sequential simulation load is possible prior to execution
+            for sim_params_indiv in self.sim_params: 
+                if not sim_params_indiv.save_state:
+                    raise AttributeError(f'Cannot include {sim_params_indiv.affix} in chained sequence, as it reports Checkpoint (not State)')
+
     @staticmethod
     def argparse_inject(parser : ArgumentParser) -> None:
         '''Flexible support for instantiating addition to argparse in an existing script'''
@@ -360,27 +365,32 @@ class RunSimulations(WorkflowComponent):
         def polymer_fn(polymer : Polymer, poly_logger : logging.Logger) -> None:
             '''Run OpenMM simulation(s) according to sets of predefined simulation parameters'''
             N = len(self.sim_params)
-            for i, sim_params in enumerate(self.sim_params):
+            for i, sim_params_indiv in enumerate(self.sim_params):
                 poly_logger.info(f'Running simulation {i + 1} / {N}')
 
                 # initialize OpenFF Interchange from Molecule
                 interchange = polymer.interchange(
-                    forcefield_path=sim_params.forcefield_path,
-                    charge_method=sim_params.charge_method,
-                    periodic=sim_params.periodic
+                    forcefield_path=sim_params_indiv.forcefield_path,
+                    charge_method=sim_params_indiv.charge_method,
+                    periodic=sim_params_indiv.periodic
                 )
 
                 # Create ensemble-specific Simulation from Interchange 
-                sim_factory = EnsembleSimulationFactory.registry[sim_params.ensemble.upper()]() # case-insensitive check for simulation creators for the desired ensemble
-                simulation = sim_factory.create_simulation(interchange, sim_params=sim_params)
+                sim_factory = EnsembleSimulationFactory.registry[sim_params_indiv.ensemble.upper()]() # case-insensitive check for simulation creators for the desired ensemble
+                simulation = sim_factory.create_simulation(interchange, sim_params=sim_params_indiv)
                 if (self.sequential) and (i != 0): # if sequential mode is enabled and the current simulation is not the first...
                     poly_logger.info(f'Loading initial configuration from previous simulation "{polymer.newest_sim_dir.name}"')
-                    sim_paths, _ = polymer.load_sim_paths_and_params(sim_dir=polymer.newest_sim_dir) # ...load the paths from the most recent simulation (i.e. the previous one in the batch) !NOTE! - CRITICAL that sim params are discarded here
-                    simulation.loadCheckpoint(str(sim_paths.checkpoint)) # ... and instantiate the current simulation from its checkpoint file (must be converted to str, since OpenMM can't handle Path objects)
+                    sim_paths, prev_sim_params = polymer.load_sim_paths_and_params(sim_dir=polymer.newest_sim_dir) # ...load the paths from the most recent simulation (i.e. the previous one in the batch) !NOTE! - CRITICAL that sim params are discarded here
+                    
+                    if prev_sim_params.save_state: # ... and instantiate the current simulation from its checkpoint file (must be converted to str, since OpenMM can't handle Path objects)
+                        simulation.loadState(str(sim_paths.checkpoint)) 
+                    else:
+                        simulation.loadCheckpoint(str(sim_paths.checkpoint)) 
 
                 # Create output folder, populate with simulation files, and integrate
-                sim_folder = polymer.make_sim_dir(affix=sim_params.affix)
-                run_simulation(simulation, sim_params=sim_params, output_folder=sim_folder, output_name=polymer.mol_name)
+                sim_folder = polymer.make_sim_dir(affix=sim_params_indiv.affix)
+                run_simulation(simulation, sim_params=sim_params_indiv, output_folder=sim_folder, output_name=polymer.mol_name)
+                poly_logger.info('') # whitespace to provide breathing room
 
         return polymer_fn
 
@@ -453,8 +463,11 @@ class TrajectoryAnalysis(WorkflowComponent):
         '''Create wrapper for handling in logger'''
         def polymer_fn(polymer : Polymer, poly_logger : logging.Logger) -> None:
             '''Analyze trajectories to obtain polymer property data in reusable CSV form'''
-            for sim_dir, (sim_paths, sim_params) in polymer.filter_sim_dirs(conditions=self.sim_dir_filters).items():
-                poly_logger.info(f'Found trajectory {sim_paths.trajectory}')
+            sim_dirs_to_analyze = polymer.filter_sim_dirs(conditions=self.sim_dir_filters)
+            N = len(sim_dirs_to_analyze)
+
+            for i, (sim_dir, (sim_paths, sim_params)) in enumerate(sim_dirs_to_analyze.items()):
+                poly_logger.info(f'Found trajectory {sim_paths.trajectory} ({i + 1}/{N})')
                 traj = polymer.load_traj(sim_dir)
 
                 # save and plot RDF data
@@ -473,6 +486,7 @@ class TrajectoryAnalysis(WorkflowComponent):
 
                 sim_paths.to_file(polymer.simulation_paths[sim_dir]) # update references to analyzed data files in path file
                 poly_logger.info(f'Successfully exported trajectory analysis data')
+                poly_logger.info('') # whitespace to provide breathing room
             
         return polymer_fn
     
