@@ -6,7 +6,6 @@ from ..solvation.packmol import packmol_solvate_wrapper
 from ..charging.application import load_matched_charged_molecule
 
 from ..simulation.records import SimulationPaths, SimulationParameters
-from ..simulation.execution import run_simulation
 
 from ..analysis.trajectory import load_traj
 from ..molutils.rdmol.rdcompare import compare_chgd_rdmols
@@ -638,12 +637,6 @@ class Polymer:
         LOGGER.info(f'Creating SMIRNOFF Interchange for "{self.mol_name}" with forcefield "{forcefield_path.stem}"')
         return Interchange.from_smirnoff(force_field=forcefield, topology=off_topology, charge_from_molecules=[self.offmol]) # package FF, topology, and molecule charges together and ship out
         
-    def run_simulation(self, sim_params : SimulationParameters) -> None:
-        '''Run OpenMM simulation according to a set of predefined simulation parameters'''
-        sim_folder = self.make_sim_dir()
-        interchange = self.interchange(sim_params.charge_method, periodic=sim_params.periodic)
-        run_simulation(interchange, sim_params=sim_params, output_folder=sim_folder, output_name=self.mol_name)
-
     def load_sim_paths_and_params(self, sim_dir : Optional[Path]=None) -> tuple[SimulationPaths, SimulationParameters]:
         '''Takes a path to a simulation directory and returns the associated simulation file paths and parameters
         If no path is provided, will use most recent simulation by default'''

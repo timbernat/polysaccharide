@@ -138,7 +138,7 @@ class EspalomaCharger(MolCharger):
     def _charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
         return generate_molecule_charges(uncharged_mol, toolkit='Espaloma Charge Toolkit', partial_charge_method='espaloma-am1bcc', force_match=True)
 
-CHARGER_REGISTRY = { # Keep a registry of all SDF charger implementations for convenience
+CHARGER_REGISTRY = { # Keep a registry of all charger implementations for convenience
     charger.METHOD_NAME : charger
         for charger in MolCharger.__subclasses__()
 }
