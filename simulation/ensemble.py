@@ -81,6 +81,14 @@ class EnsembleSimulationFactory(ABC):
         
         return sim
 
+    @property
+    def registry(self) -> dict[str, 'EnsembleSimulationFactory']:
+        '''Easily accessible record of all available concrete ensemble implementations'''
+        return {  
+            ens_factory.ensemble : ens_factory
+                for ens_factory in EnsembleSimulationFactory.__subclasses__()
+        }
+
 # Concrete implementations
 class NVESimulationFactory(EnsembleSimulationFactory):
     ensemble = 'NVE'
@@ -113,8 +121,3 @@ class NPTSimulationFactory(EnsembleSimulationFactory):
         return [MonteCarloBarostat(sim_params.pressure, sim_params.temperature, sim_params.barostat_freq)]
     
   
-# define registry for convenient lookup once all child classes are defined above
-ENSEMBLE_REGISTRY = {  # keep easily accessible record of all available converter types
-    ens_factory.ensemble : ens_factory
-        for ens_factory in EnsembleSimulationFactory.__subclasses__()
-}
