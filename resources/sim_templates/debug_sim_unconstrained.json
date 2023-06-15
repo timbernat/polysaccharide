@@ -6,6 +6,7 @@
     "ensemble": "NPT",
     "periodic": true,
     "forcefield_name": "openff_unconstrained-2.0.0.offxml",
+    "affix": "debug_sim_unconstrained",
     "report_to_pdb": false,
     "reported_state_data": {
         "step": true,

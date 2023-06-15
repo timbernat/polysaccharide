@@ -32,9 +32,10 @@ class SimulationParameters(JSONifiable):
 
     ensemble : str
     periodic : bool = True
-    forcefield_name : str = ''
+    forcefield_name : str = 'openff-2.0.0.offxml' # will be looked up in openforcefields resource module
 
-    report_to_pdb : bool = False
+    affix : str = '' # optional descriptive string for simulation
+    report_to_pdb : bool = False # whether to report to 
     reported_state_data : dict[str, bool] = field(default_factory=dict)
 
     timestep    : Quantity = (2 * femtosecond)

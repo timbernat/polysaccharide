@@ -324,13 +324,12 @@ class RunSimulations(WorkflowComponent):
     desc = 'Prepares and integrates MD simulation for chosen molecules in OpenMM'
     name = 'simulate'
 
-    def __init__(self, sim_params : Union[SimulationParameters, Iterable[SimulationParameters]], affix : str='', sequential : bool=False, **kwargs):
+    def __init__(self, sim_params : Union[SimulationParameters, Iterable[SimulationParameters]], sequential : bool=False, **kwargs):
         '''Initialize 1 or more sets of simulation parameters'''
         if not sim_params:
             raise ValueError('Must specify at least 1 simulation parameter preset')
         
         self.sim_params = asiterable(sim_params) # handle singleton case
-        self.affix = affix
         self.sequential = sequential
 
     @staticmethod
@@ -338,7 +337,6 @@ class RunSimulations(WorkflowComponent):
         '''Flexible support for instantiating addition to argparse in an existing script'''
         parser.add_argument('-sp', '--sim_param_names', help=f'Name of the simulation parameters preset file(s) to load for simulation (available files are {avail_sim_templates})', action='store', nargs='+', required=True)
         parser.add_argument('-dir', '--directory'     , help='Path of the folder in which the chosen simulation parameters preset file(s) reside', type=Path, default=impres.files(resources.sim_templates))
-        parser.add_argument('-a', '--affix'           , help='Any additional text to preprend to simulation output directory', default='')
         parser.add_argument('-seq', '--sequential'    , help='If set and multiple parameter sets are passed, each simulation will be initialized with the final snapshot of the previous simulation', action='store_true')
 
     @classmethod
@@ -349,7 +347,6 @@ class RunSimulations(WorkflowComponent):
                 SimulationParameters.from_file(default_suffix(args.directory / sim_param_name, suffix='json')) 
                     for sim_param_name in args.sim_param_names
             ],
-            'affix' : args.affix,
             'sequential' : args.sequential
         }
 
@@ -382,7 +379,7 @@ class RunSimulations(WorkflowComponent):
                     simulation.loadCheckpoint(str(sim_paths.checkpoint)) # ... and instantiate the current simulation from its checkpoint file (must be converted to str, since OpenMM can't handle Path objects)
 
                 # Create output folder, populate with simulation files, and integrate
-                sim_folder = polymer.make_sim_dir(affix=self.affix)
+                sim_folder = polymer.make_sim_dir(affix=sim_params.affix)
                 run_simulation(simulation, sim_params=sim_params, output_folder=sim_folder, output_name=polymer.mol_name)
 
         return polymer_fn
@@ -530,7 +527,7 @@ class VacuumAnneal(WorkflowComponent): # TODO : decompose this into cloning, sim
                 )
 
                 # runn simulation
-                sim_comp = RunSimulations(self.sim_params, affix=self.name)
+                sim_comp = RunSimulations(self.sim_params)
                 simulate_polymer = sim_comp.make_polymer_fn()
                 simulate_polymer(polymer, poly_logger)
                 

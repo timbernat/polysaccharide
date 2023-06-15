@@ -6,6 +6,7 @@
     "ensemble": "NVT",
     "periodic": true,
     "forcefield_name": "openff-2.0.0.offxml",
+    "affix": "1_ns_NVT_espaloma",
     "report_to_pdb": false,
     "reported_state_data": {
         "step": true,
