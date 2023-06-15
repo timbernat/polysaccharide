@@ -81,6 +81,7 @@ class EnsembleSimulationFactory(ABC):
         
         return sim
 
+    @classmethod
     @property
     def registry(self) -> dict[str, 'EnsembleSimulationFactory']:
         '''Easily accessible record of all available concrete ensemble implementations'''
