@@ -7,9 +7,8 @@ LOGGER = logging.getLogger(__name__)
 
 # Custom imports
 from .. import LOGGERS_MASTER
-from .. import extratypes, filetree
+from .. import general, filetree
 from ..logutils import ProcessLogHandler
-from ..extratypes import aspath
 
 from .representation import Polymer
 from . import filtering
@@ -31,7 +30,7 @@ from argparse import ArgumentParser, BooleanOptionalAction, Namespace
 class PolymerManager:
     '''Class for organizing, loading, and manipulating collections of Polymer objects'''
     def __init__(self, collection_dir : Path):
-        self.collection_dir : Path = aspath(collection_dir) # turn string into Paths, if passed inadvertently
+        self.collection_dir : Path = general.aspath(collection_dir) # turn string into Paths, if passed inadvertently
         self.log_dir        : Path = self.collection_dir/'Logs'
         self.polymers_list  : list[Polymer] = []
 
@@ -124,7 +123,7 @@ class PolymerManager:
 
     def filtered_by(self, filters : Union[MolFilter, Iterable[MolFilter]]) -> dict[str, Polymer]:
         '''Return name-keyed dict of all Polymers in collection which meet all of a set of filtering conditions'''
-        filters = extratypes.asiterable(filters)
+        filters = general.asiterable(filters)
         return {
             polymer.mol_name : polymer
                 for polymer in self.polymers_list

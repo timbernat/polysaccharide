@@ -5,6 +5,7 @@ from datetime import datetime
 from functools import reduce
 from operator import mul
 from copy import deepcopy
+from pathlib import Path
 
 # Typing and Subclassing
 from typing import Any, Callable, Iterable, Optional, Union
@@ -62,6 +63,17 @@ def optional_in_place(funct : Callable[[Any, Any], None]) -> Callable[[Any, Any]
             return copy_obj # return the new object
     return in_place_wrapper
 
+def asiterable(arg_val : Union[Any, Iterable[Any]]) -> Iterable[Any]:
+	'''Permits functions expecting iterable arguments to accept singular values'''
+	if not isinstance(arg_val, Iterable):
+		arg_val = (arg_val,) # turn into single-item tuple (better for memory)
+	return arg_val
+
+def aspath(path : Union[Path, str]) -> Path:
+	'''Allow functions which expect Paths to also accept strings'''
+	if not isinstance(path, Path):
+		path = Path(path)
+	return path
 
 # Data containers / data structures
 @optional_in_place

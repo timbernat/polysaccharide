@@ -22,7 +22,6 @@ from openmm.app import PDBReporter, DCDReporter, StateDataReporter, CheckpointRe
 Reporter = Union[PDBReporter, DCDReporter, StateDataReporter, CheckpointReporter] # for clearer typehinting
 
 # Custom Imports
-from ..extratypes import asiterable
 from .records import SimulationPaths, SimulationParameters
 
 # Units, quantities, and dimensions

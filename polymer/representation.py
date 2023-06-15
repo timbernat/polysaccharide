@@ -1,5 +1,5 @@
 # Custom imports
-from .. import extratypes, general, filetree
+from .. import general, filetree
 from ..solvation.packmol import packmol_solvate_wrapper
 
 from ..charging.application import load_matched_charged_molecule
@@ -570,7 +570,7 @@ class Polymer:
 
     def solvate(self, solvents : Union[Solvent, Iterable[Solvent]], template_path : Path, dest_dir : Optional[Path]=None, exclusion : Optional[float]=None, precision : int=4) -> 'Polymer':
         '''Create a clone of a Polymer and solvate it in a box defined by the polymer's bounding box + an exclusion buffer. Can solvate with one or more solvents'''
-        for solvent in extratypes.asiterable(solvents):
+        for solvent in general.asiterable(solvents):
             if solvent is not None: # handle the case where a null solvent is passed (technically a valid Solvent for typing reasons)
                 self._solvate(solvent=solvent, template_path=template_path, dest_dir=dest_dir, exclusion=exclusion, precision=precision)
 
@@ -660,7 +660,7 @@ class Polymer:
     
     def filter_sim_dirs(self, conditions : Union[SimDirFilter, Iterable[SimDirFilter]]) -> dict[Path, tuple[SimulationPaths, SimulationParameters]]:
         '''Returns all simulation directories which meet some binary condition based on their simulation file paths and/or the parameters with which the simulation was ran'''
-        conditions = extratypes.asiterable(conditions)
+        conditions = general.asiterable(conditions)
         valid_sim_dirs = {}
         for sim_dir in self.completed_sims:
             sim_paths, sim_params = self.load_sim_paths_and_params(sim_dir)
