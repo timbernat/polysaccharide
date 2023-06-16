@@ -655,9 +655,10 @@ class _SlurmSbatch(WorkflowComponent):
     @staticmethod
     def extract_job_id(shell_str : Union[str, bytes]) -> str:
         '''Extracts job id from shell-echoed string after slurm job submission'''
-        JOB_ID_RE = re.compile(r'Submitted batch job (\d+)')
-        if not isinstance(shell_str, str):
-            shell_str = str(shell_str)
+        # JOB_ID_RE = re.compile(r'Submitted batch job (\d+)')
+        JOB_ID_RE = re.compile(r'(\d+)')
+        if isinstance(shell_str, bytes):
+            shell_str = shell_str.decode(encoding='utf-8')
 
         return re.search(JOB_ID_RE, str(shell_str)).groups()[0]
     
@@ -665,7 +666,6 @@ class _SlurmSbatch(WorkflowComponent):
         '''Collect the arguments passed to the Component for propogation to individual job calls'''
         arg_start_idx = sys.argv.index(self.component.name) + 1 # find where Component-specific arguments begin (immediately after job type spec)
         arg_str = ' '.join(sys.argv[arg_start_idx:])       # collate into space-delimited string
-        print(arg_str)
 
         return arg_str
 
@@ -692,7 +692,7 @@ class _SlurmSbatch(WorkflowComponent):
             '''Echo requisite information for a single molecule'''
             slurm_out = subprocess.check_output([self.generate_sbatch_cmd(polymer.mol_name)], shell=True) # submit job via subprocess shell call
             if self.collect_job_ids:
-                # self.job_ids.append(self.extract_job_id(slurm_out))
-                self.job_ids.append(slurm_out)
+                self.job_ids.append(self.extract_job_id(slurm_out))
+                # self.job_ids.append( slurm_out.decode('utf-8') ) # subprocess return bytes instead of str for some reason
         
         return polymer_fn
