@@ -8,6 +8,7 @@ from typing import Any, Callable, ClassVar, Iterable, Optional, Union
 from abc import ABC, abstractmethod, abstractproperty
 
 # Generic imports
+import datetime
 from pathlib import Path
 from shutil import copyfile
 from time import sleep
@@ -606,12 +607,13 @@ class _SlurmSbatch(WorkflowComponent):
     desc = 'Private component for handling parallel dispatch of single-polymer job submissions to slurm'
     name = '_sbatch'
 
-    def __init__(self, component : WorkflowComponent, sbatch_script : Path, python_script_name : str, source_path : Path, collect_job_ids : bool=False, **kwargs):
+    def __init__(self, component : WorkflowComponent, sbatch_script : Path, python_script_name : str, source_path : Path, jobtime : datetime.time, collect_job_ids : bool=False, **kwargs):
         self.component = component
         self.sbatch_script = sbatch_script
         self.python_script_name = python_script_name
         self.source_path = source_path
-
+        
+        self.jobtime = jobtime
         self.job_ids = []
         self.collect_job_ids = collect_job_ids
 
@@ -619,10 +621,14 @@ class _SlurmSbatch(WorkflowComponent):
     def argparse_inject(parser : ArgumentParser) -> None:
         '''Flexible support for instantiating addition to argparse in an existing script'''
         parser.add_argument('-comp', '--component_name'  , help='Name of the target WorkflowComponent type to parallelize', required=True)
+        parser.add_argument('-src', '--source_path'      , help='The Path to the target collection of Polymers', type=Path, required=True)
         parser.add_argument('-sb', '--sbatch_script'     , help='Name of the target slurm job script to use for submission', default='slurm_dispatch.job', type=Path)
-        parser.add_argument('-py', '--python_script_name', help='Name of the Python script which should be called on ')
-        parser.add_argument('-src', '--source_path' , help='The Path to the target collection of Polymers', required=True, type=Path)
+        parser.add_argument('-py', '--python_script_name', help='Name of the Python script which should be called on')
         parser.add_argument('-jid', '--collect_job_ids'  , help='Whether or not to gather job IDs when submitting (useful for creating dependencies in serial workflows)', action='store_true')
+
+        parser.add_argument('-hr', '--hours'   , help='Number of hours to allocate in job walltime'  , type=int, default=0)
+        parser.add_argument('-min', '--minutes', help='Number of minutes to allocate in job walltime', type=int, default=30)
+        parser.add_argument('-sec', '--seconds', help='Number of seconds to allocate in job walltime', type=int, default=0)
 
     @classmethod
     def process_argparse_args(self, args: Namespace) -> dict[Any, Any]:
@@ -631,10 +637,21 @@ class _SlurmSbatch(WorkflowComponent):
             'sbatch_script' : default_suffix(args.sbatch_script, suffix='job'),
             'python_script_name' : args.python_script_name,
             'source_path' : args.source_path,
-            'collect_job_ids' : args.collect_job_ids
+            'collect_job_ids' : args.collect_job_ids,
+            'jobtime' : datetime.time(hour=args.hours, minute=args.minutes, second=args.seconds)
         }
     
     # methods UNIQUE to this component
+    @property
+    def jobtime_str(self) -> str:
+        '''Format the specified job time into a string passable to sbatch'''
+        return self.jobtime.strftime('%H:%M:%S')
+    
+    @property
+    def dependency_str(self) -> str:
+        '''String of job ids which can be passed to subsequent sbatch job dependency arg (as after<arg>:self.dependency_str)'''
+        return ':'.join(self.job_ids)
+
     @staticmethod
     def extract_job_id(shell_str : Union[str, bytes]) -> str:
         '''Extracts job id from shell-echoed string after slurm job submission'''
@@ -656,6 +673,8 @@ class _SlurmSbatch(WorkflowComponent):
         '''Generate an sbatch command call string to be executed as a subprocess'''
         return' '.join([
             'sbatch',
+            '--parsable', # job submission only returns job ID (easier to parse)
+            f'--time {self.jobtime_str}',
             f'--job-name "{mol_name}_dispatch"',
             f'--output "slurm_logs/{mol_name}_dispatch.log"',
             str(self.sbatch_script), # define target .job script
@@ -671,10 +690,9 @@ class _SlurmSbatch(WorkflowComponent):
         '''Create wrapper for handling in logger'''
         def polymer_fn(polymer : Polymer, poly_logger : logging.Logger) -> None:
             '''Echo requisite information for a single molecule'''
-            cmd = self.generate_sbatch_cmd(polymer.mol_name)
-            slurm_out = subprocess.check_output([cmd], shell=True) # submit job via subprocess shell call
-            
+            slurm_out = subprocess.check_output([self.generate_sbatch_cmd(polymer.mol_name)], shell=True) # submit job via subprocess shell call
             if self.collect_job_ids:
-                self.job_ids.append(self.extract_job_id(slurm_out))
+                # self.job_ids.append(self.extract_job_id(slurm_out))
+                self.job_ids.append(slurm_out)
         
         return polymer_fn
