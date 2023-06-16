@@ -186,7 +186,7 @@ class Polymer:
         # creating the clone
         LOGGER.info(f'Creating clone of {self.mol_name}')
         clone = Polymer(parent_dir=dest_dir, mol_name=clone_name, exclusion=exclusion)
-        clone.base_mol_name = self.mol_name # keep record of identity of original molecule
+        clone.base_mol_name = self.base_mol_name # keep record of identity of original molecule
 
         if clone_solvent:
             self.transfer_attr('solvent', clone)
