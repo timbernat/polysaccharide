@@ -531,7 +531,7 @@ class Polymer:
         LOGGER.info(f'Solvating "{self.mol_name}" in {solvent.name}')
         solva_dir = self.clone( # logging performed implicitly within cloning and solvating steps here
             dest_dir=dest_dir,
-            clone_name=f'_solv_{solvent.name}',
+            clone_affix=f'solv_{solvent.name}',
             exclusion=exclusion,
             clone_solvent=False,
             clone_structures=True,
