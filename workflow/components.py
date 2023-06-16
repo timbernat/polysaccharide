@@ -394,9 +394,9 @@ class RunSimulations(WorkflowComponent):
 
         return polymer_fn
 
-class TransferMonomerCharges(WorkflowComponent):
+class TransferMonomers(WorkflowComponent):
     desc = 'Transfer residue-averaged charged monomer files between Polymers in two collections'
-    name = 'transfer'
+    name = 'transfer_mono'
 
     def __init__(self, target_mgr : PolymerManager, **kwargs):
         self.target_mgr = target_mgr
@@ -530,20 +530,20 @@ class VacuumAnneal(WorkflowComponent): # TODO : decompose this into cloning, sim
         def polymer_fn(polymer : Polymer, poly_logger : logging.Logger) -> None:
             '''Run quick vacuum NVT sim at high T for specified number of runs to generate perturbed starting structures'''
             for i in range(self.num_new_confs):
+                # run simulation
+                sim_comp = RunSimulations(self.sim_params)
+                simulate_polymer = sim_comp.make_polymer_fn()
+                simulate_polymer(polymer, poly_logger)
+
                 # generate clone to anneal
                 conf_clone = polymer.clone(
-                    clone_name=f'{polymer.base_mol_name}_conf_{i + 1}',
+                    clone_affix=f'_conf_{i + 1}',
                     clone_solvent=True,
                     clone_structures=True,
                     clone_monomers=True,
                     clone_charges=True,
                     clone_sims=False
                 )
-
-                # runn simulation
-                sim_comp = RunSimulations(self.sim_params)
-                simulate_polymer = sim_comp.make_polymer_fn()
-                simulate_polymer(polymer, poly_logger)
                 
                 # replace clone's starting structure with new anneal structure
                 poly_logger.info('Extracting final conformation from simulation')
@@ -552,6 +552,51 @@ class VacuumAnneal(WorkflowComponent): # TODO : decompose this into cloning, sim
                 poly_logger.info('Applying new conformation to clone')
                 new_conf.save(conf_clone.structure_file) # overwrite the clone's structure with the new conformer
                 
+        return polymer_fn
+
+class TransferSimSnapshot(WorkflowComponent): # TODO : decompose this into cloning, sim (already implemented), and structure transfer components
+    desc = 'Take the final frame of a simulation and generate a new Polymer with that frame as its PDB structure'
+    name = 'transfer_struct'
+
+    def __init__(self, dest_dir : Optional[Path]=None, snapshot_idx : int=-1, clone_affix : str='clone', sim_dir_filters : Optional[Iterable[SimDirFilter]]=None, **kwargs):
+        '''Define parameters for vacuum anneal, along with number of new conformers'''
+        self.dest_dir = dest_dir
+        self.snapshot_idx = snapshot_idx
+        self.clone_affix = clone_affix
+
+        if sim_dir_filters is None:
+            sim_dir_filters = []
+        self.sim_dir_filters = sim_dir_filters
+
+    @staticmethod
+    def argparse_inject(parser : ArgumentParser) -> None:
+        '''Flexible support for instantiating addition to argparse in an existing script'''
+        parser.add_argument('-dest', '--dest_dir'   , help='Destination directory into which the structure-altered clone should be sent', type=Path)
+        parser.add_argument('-sid', '--snapshot_idx', help='Index of the frame of the vacuum anneal simulation to take as the new conformation (by default -1, i.e. the final frame)', type=int, default=-1)
+        parser.add_argument('-caf', '--clone_affix' , help='An additional descriptive string to add to the name of the resulting clone', default='clone')
+
+    def make_polymer_fn(self) -> PolymerFunction:
+        '''Create wrapper for handling in logger'''
+        def polymer_fn(polymer : Polymer, poly_logger : logging.Logger) -> None:
+            '''Run quick vacuum NVT sim at high T for specified number of runs to generate perturbed starting structures'''
+            # generate clone to anneal
+            conf_clone = polymer.clone(
+                dest_dir=self.dest_dir,
+                clone_affix=self.clone_affix,
+                clone_solvent=True,
+                clone_structures=True,
+                clone_monomers=True,
+                clone_charges=True,
+                clone_sims=False
+            )
+            
+            # replace clone's starting structure with new anneal structure
+            poly_logger.info('Extracting final conformation from simulation')
+            traj = polymer.load_traj(polymer.newest_sim_dir)
+            new_conf = traj[self.snapshot_idx]
+            poly_logger.info('Applying new conformation to clone')
+            new_conf.save(conf_clone.structure_file) # overwrite the clone's structure with the new conformer
+            
         return polymer_fn
 
 class _SlurmSbatch(WorkflowComponent):

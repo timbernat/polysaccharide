@@ -162,7 +162,7 @@ class Polymer:
             other.to_file() # ensure newly set attributes are reflected in checkpoint
             LOGGER.info(f'Copied attribute {attr_name} from {self.mol_name} to {other.mol_name}')
 
-    def clone(self, dest_dir : Optional[Path]=None, clone_name : Optional[str]=None, exclusion : Optional[float]=None, clone_solvent : bool=True,
+    def clone(self, dest_dir : Optional[Path]=None, clone_affix : str='clone', exclusion : Optional[float]=None, clone_solvent : bool=True,
               clone_structures : bool=False, clone_monomers : bool=True, clone_charges : bool=False, clone_sims : bool=False) -> 'Polymer':
         '''
         Create a copy of a Polymer in a specified directory with a new name, updating file references accordingly
@@ -176,15 +176,13 @@ class Polymer:
         if not dest_dir.exists():
             raise FileNotFoundError(f'Clone destination directory {dest_dir} does not exist')
 
-        if clone_name is None:
-            clone_name = f'{self.mol_name}_clone'
+        clone_name = f'{self.mol_name}{"_" if clone_affix else ""}{clone_affix}'
+        if (dest_dir == self.parent_dir) and (clone_name == self.mol_name):
+            raise PermissionError(f'Cannot clone Polymer at {self.path} over itself')
 
         if exclusion is None:
             exclusion = self.exclusion
         
-        if (dest_dir == self.parent_dir) and (clone_name == self.mol_name):
-            raise PermissionError(f'Cannot clone Polymer at {self.path} over itself')
-
         # creating the clone
         LOGGER.info(f'Creating clone of {self.mol_name}')
         clone = Polymer(parent_dir=dest_dir, mol_name=clone_name, exclusion=exclusion)
@@ -531,10 +529,9 @@ class Polymer:
             exclusion = self.exclusion
 
         LOGGER.info(f'Solvating "{self.mol_name}" in {solvent.name}')
-        solvated_name = f'{self.mol_name}_solv_{solvent.name}'
         solva_dir = self.clone( # logging performed implicitly within cloning and solvating steps here
             dest_dir=dest_dir,
-            clone_name=solvated_name,
+            clone_name=f'_solv_{solvent.name}',
             exclusion=exclusion,
             clone_solvent=False,
             clone_structures=True,
@@ -547,7 +544,7 @@ class Polymer:
             polymer_pdb = self.structure_file, 
             solvent_pdb = solvent.structure_file, 
             outdir      = solva_dir.structures, 
-            outname     = solvated_name, 
+            outname     = solva_dir.mol_name, 
             template_path = template_path,
             N           = round(solva_dir.box_volume * solvent.number_density),
             box_dims    = solva_dir.box_vectors,
