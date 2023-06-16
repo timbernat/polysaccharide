@@ -2,6 +2,7 @@
 import re
 from datetime import datetime
 
+from itertools import product as cartesian_product
 from functools import reduce
 from operator import mul
 from copy import deepcopy
@@ -16,7 +17,7 @@ from pint import Quantity as PintQuantity
 from openmm.unit.quantity import Quantity as OMMQuantity
 
 
-# Greek Characters
+# Math
 greek_letter_names = [ # names for greek character literals
     'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta',
     'iota', 'kappa', 'lambda', 'mu', 'nu', 'xi', 'omicron', 'pi',
@@ -34,7 +35,6 @@ for case, idx in _greek_start_idxs.items():
             for i, letter_name in enumerate(greek_letter_names)
     }
 
-# Math
 def product(container : Iterable):
     '''Analogous to builtin sum()'''
     return reduce(mul, container)
@@ -49,7 +49,21 @@ class Accumulator:
     def average(self) -> float:
         return self.sum / self.count
 
-# Functional operations and decorators
+
+# Functional modifiers and decorators
+def generate_repr(cls : Any) -> Any:
+    '''Class decorator for autogenerating __repr__ for attributes specified in DISP_ATTRS class attr
+    The class this is applied to MUST have implemented an iterable DISP_ATTRS class attribute'''
+    assert(hasattr(cls, 'DISP_ATTRS'))
+    disp_attrs : Iterable[str] = cls.DISP_ATTRS
+
+    def _repr_generic_(self) -> str:
+        attr_str = ', '.join(f'{attr}={getattr(self, attr)}' for attr in disp_attrs)
+        return f'{cls.__name__}({attr_str})'
+    cls.__repr__ : Callable[[Any], str] = _repr_generic_
+
+    return cls
+
 def optional_in_place(funct : Callable[[Any, Any], None]) -> Callable[[Any, Any], Optional[Any]]:
     '''Decorator function for allowing in-place (writeable) functions which modify object attributes
     to be not performed in-place (i.e. read-only), specified by a boolean flag'''
@@ -75,6 +89,21 @@ def aspath(path : Union[Path, str]) -> Path:
 		path = Path(path)
 	return path
 
+
+# Tools for iteration 
+def swappable_loop_order(iter1 : Iterable, iter2 : Iterable, swap : bool=False) -> Iterable[tuple[Any, Any]]:
+    '''Enables dynamic swapping of the order of execution of a 2-nested for loop'''
+    order = [iter1, iter2] if not swap else [iter2, iter1]
+    for pair in cartesian_product(*order):
+        yield pair[::(-1)**swap] # reverse order of pair (preserves argument identity)
+
+def progress_iter(itera : Iterable, key : Callable[[Any], str]=lambda x : x) -> Iterable[tuple[str, Any]]:
+    '''Iterate through'''
+    N = len(itera) # TODO : extend this to work for generators / consumables
+    for i, item in enumerate(itera):
+        yield (f'{key(item)} ({i + 1} / {N})', item) # +1 converts to more human-readable 1-index for step count
+
+
 # Data containers / data structures
 @optional_in_place
 def modify_dict(path_dict : dict[Any, Any], modifier_fn : Callable[[Any, Any], tuple[Any, bool]]) -> None:
@@ -99,6 +128,7 @@ def sort_dict_by_values(targ_dict : dict, reverse : bool=False) -> dict[Any, Any
             for key in sorted(targ_dict, key=lambda k : targ_dict[k], reverse=reverse)
     }
 
+
 # Unit handling
 class MissingUnitsError(Exception):
     pass
@@ -118,6 +148,7 @@ def strip_units(coords : Union[tuple, PintQuantity, OMMQuantity]) -> tuple[float
         return coords._value
 
     return coords
+
 
 # Date / time formatting
 @dataclass
