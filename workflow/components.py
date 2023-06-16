@@ -580,8 +580,11 @@ class TransferSimSnapshot(WorkflowComponent): # TODO : decompose this into cloni
         def polymer_fn(polymer : Polymer, poly_logger : logging.Logger) -> None:
             '''Run quick vacuum NVT sim at high T for specified number of runs to generate perturbed starting structures'''
             # generate clone to anneal
+            parent_dir = self.dest_dir / polymer.base_mol_name
+            parent_dir.mkdir(exist_ok=True)
+
             conf_clone = polymer.clone(
-                dest_dir=self.dest_dir,
+                dest_dir=parent_dir,
                 clone_affix=self.clone_affix,
                 clone_solvent=True,
                 clone_structures=True,
