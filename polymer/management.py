@@ -121,14 +121,21 @@ class PolymerManager:
                     if polymer.completed_sims # don't report directories without simulations
         }
 
-    def filtered_by(self, filters : Union[MolFilter, Iterable[MolFilter]]) -> dict[str, Polymer]:
+    def filtered_by(self, filters : Union[MolFilter, Iterable[MolFilter]]=None, as_dict : bool=True) -> Union[dict[str, Polymer], list[Polymer]]:
         '''Return name-keyed dict of all Polymers in collection which meet all of a set of filtering conditions'''
-        filters = general.asiterable(filters)
-        return {
-            polymer.mol_name : polymer
+        if filters is None:
+            filters = [] # handle null case
+        filters = general.asiterable(filters) # handle singleton case
+
+        screened = [
+            polymer
                 for polymer in self.polymers_list
                     if all(_filter(polymer) for _filter in filters)
-        }
+        ]
+    
+        if as_dict:
+            return {polymer.mol_name : polymer for polymer in screened}
+        return screened
 
 # FILE AND Polymer GENERATION
     @refresh_listed_dirs
