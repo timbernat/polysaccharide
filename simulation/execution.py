@@ -33,6 +33,6 @@ def run_simulation(simulation : Simulation, sim_params : SimulationParameters, o
     LOGGER.info('Performing energy minimization')
     simulation.minimizeEnergy()
 
-    LOGGER.info(f'Integrating {sim_params.total_time} OpenMM sim {sim_params.affix} at {sim_params.temperature} and {sim_params.pressure} for {sim_params.num_steps} steps')
+    LOGGER.info(f'Integrating {sim_params.total_time} OpenMM sim at {sim_params.temperature} and {sim_params.pressure} for {sim_params.num_steps} steps')
     simulation.step(sim_params.num_steps)
     LOGGER.info('Simulation integration completed successfully')

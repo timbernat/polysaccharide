@@ -367,7 +367,7 @@ class RunSimulations(WorkflowComponent):
             '''Run OpenMM simulation(s) according to sets of predefined simulation parameters'''
             N = len(self.sim_params)
             for i, sim_params_indiv in enumerate(self.sim_params):
-                poly_logger.info(f'Running simulation {i + 1} / {N}')
+                poly_logger.info(f'Running simulation {i + 1} / {N} ("{sim_params_indiv.affix}")')
 
                 # initialize OpenFF Interchange from Molecule
                 interchange = polymer.interchange(
