@@ -455,10 +455,10 @@ class Polymer:
         charge_method = charger.METHOD_NAME
 
         if self.has_charges_for(charge_method): # if charges and charge Molecule SDFs already exist for the current method
-            LOGGER.info(f'Found existing "{charge_method}" partial charges for {self.mol_name}')
+            LOGGER.info(f'Found existing "{charge_method}" partial charges for "{self.mol_name}"')
             cmol = self.charged_offmol_from_sdf(charge_method)
         else:
-            LOGGER.warning(f'Found no existing "{charge_method}" partial charges for {self.mol_name}')
+            LOGGER.warning(f'Found no existing "{charge_method}" partial charges for "{self.mol_name}"')
             cmol, sdf_path = self.charge_and_save_molecule(charger, strict=strict, verbose=verbose, chgd_monomers=False, topo_only=True) # ensure only uncharged monomers are used to avoid charge contamination
 
         if return_cmol:
