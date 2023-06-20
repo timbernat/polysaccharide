@@ -2,7 +2,6 @@
 
 # logging
 import logging
-logging.basicConfig(level=logging.INFO, force=True)
 
 from .. import LOGGERS_MASTER
 from ..logutils import ProcessLogHandler

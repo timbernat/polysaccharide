@@ -671,12 +671,14 @@ class _SlurmSbatch(WorkflowComponent):
 
     def generate_sbatch_cmd(self, mol_name : str) -> str: 
         '''Generate an sbatch command call string to be executed as a subprocess'''
+        jobname = f'{mol_name}_{self.component.name}_dispatch'
+        
         return' '.join([
             'sbatch',
             '--parsable', # job submission only returns job ID (easier to parse)
             f'--time {self.jobtime_str}',
-            f'--job-name "{mol_name}_dispatch"',
-            f'--output "slurm_logs/{mol_name}_dispatch.log"',
+            f'--job-name {jobname}',
+            f'--output slurm_logs/{jobname}.log',
             str(self.sbatch_script), # define target .job script
             self.python_script_name, # script arguments begin here
             str(self.source_path), 
