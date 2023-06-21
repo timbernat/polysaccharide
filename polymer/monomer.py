@@ -35,7 +35,7 @@ class MonomerInfo(JSONifiable):
     
     @property
     def has_charges(self) -> bool:
-        return self.charges is not None
+        return bool(self.charges)
 
     def serialize_json_dict(unser_jdict : dict[Any, Union[ResidueSmarts, ResidueChargeMap]]) -> dict[str, JSONSerializable]:
         '''For converting selfs __dict__ data into a form that can be serialized to JSON'''
@@ -65,30 +65,19 @@ class MonomerInfo(JSONifiable):
     
     def __add__(self, other : 'MonomerInfo') -> 'MonomerInfo':
         '''Content-aware method of merging multiple sets of monomer info via the addition operator'''
-        if not isinstance(other, MonomerInfo):
-            raise NotImplementedError(f'Can only merge {self.__class__.__name__} with another {self.__class__.__name__}, not object of type {type(other)}')
-            
-        try: # attempt full merge
+        cls = self.__class__
+        if not isinstance(other, cls):
+            raise NotImplementedError(f'Can only merge {cls.__name__} with another {cls.__name__}, not object of type {type(other)}')
+
+        if self.has_charges and other.has_charges: # only write charges to child MonomerInfo if both parents have charges
             return MonomerInfo(
                 monomers={**self.monomers, **other.monomers},
                 charges={**self.charges, **other.charges}
             )
-        except TypeError: # attempt partial merge if either object does not have charges
+        else:
             return MonomerInfo(
                 monomers={**self.monomers, **other.monomers}
             )
-
-    #     if not (self.has_charges or other.has_charges): # neither object has charges
-    #         return MonomerInfo(
-    #             monomers={**self.monomers, **other.monomers}
-    #         )
-    #     elif self.has_charges and other.has_charges: # both objects have charges
-    #         return MonomerInfo(
-    #             monomers={**self.monomers, **other.monomers},
-    #             charges={**self.charges, **other.charges}
-    #         )
-    #     else: # charge status mismatched between objects
-    #         raise ChargeMismatchError
 
     __radd__ = __add__ # support reverse addition
 
