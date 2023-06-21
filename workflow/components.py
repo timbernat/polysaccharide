@@ -328,35 +328,21 @@ class RunSimulations(WorkflowComponent):
     desc = 'Prepares and integrates MD simulation for chosen molecules in OpenMM'
     name = 'simulate'
 
-    def __init__(self, sim_params : Union[SimulationParameters, Iterable[SimulationParameters]], sequential : bool=False, **kwargs):
-        '''Initialize 1 or more sets of simulation parameters'''
-        if not sim_params:
-            raise ValueError('Must specify at least 1 simulation parameter preset')
-        
-        self.sim_params = asiterable(sim_params) # handle singleton case
-        self.sequential = sequential
-
-        if self.sequential: # perform precheck to ensure sequential simulation load is possible prior to execution
-            for sim_params_indiv in self.sim_params: 
-                if not sim_params_indiv.save_state:
-                    raise AttributeError(f'Cannot include {sim_params_indiv.affix} in chained sequence, as it reports Checkpoint (not State)')
+    def __init__(self, sim_params : SimulationParameters, **kwargs):
+        '''Initialize set of simulation parameters'''
+        self.sim_params = sim_params
 
     @staticmethod
     def argparse_inject(parser : ArgumentParser) -> None:
         '''Flexible support for instantiating addition to argparse in an existing script'''
-        parser.add_argument('-sp', '--sim_param_names', help=f'Name of the simulation parameters preset file(s) to load for simulation (available files are {avail_sim_templates})', action='store', nargs='+', required=True)
+        parser.add_argument('-sp', '--sim_params_name', help=f'Name of the simulation parameters preset file to load for simulation (available files are {avail_sim_templates})', action='store', required=True)
         parser.add_argument('-dir', '--directory'     , help='Path of the folder in which the chosen simulation parameters preset file(s) reside', type=Path, default=impres.files(resources.sim_templates))
-        parser.add_argument('-seq', '--sequential'    , help='If set and multiple parameter sets are passed, each simulation will be initialized with the final snapshot of the previous simulation', action='store_true')
 
     @classmethod
     def process_argparse_args(self, args: Namespace) -> dict[Any, Any]:
         '''Load SimulationParameter sets from the list of names and directory specified'''
         return {
-            'sim_params' : [
-                SimulationParameters.from_file(default_suffix(args.directory / sim_param_name, suffix='json')) 
-                    for sim_param_name in args.sim_param_names
-            ],
-            'sequential' : args.sequential
+            'sim_params' : SimulationParameters.from_file(default_suffix(args.directory / args.sim_params_name, suffix='json')),
         }
 
     def assert_filter_prefs(self, molbuf : MolFilterBuffer) -> list[MolFilter]:
@@ -368,33 +354,22 @@ class RunSimulations(WorkflowComponent):
         '''Create wrapper for handling in logger'''
         def polymer_fn(polymer : Polymer, poly_logger : logging.Logger) -> None:
             '''Run OpenMM simulation(s) according to sets of predefined simulation parameters'''
-            N = len(self.sim_params)
-            for i, sim_params_indiv in enumerate(self.sim_params):
-                poly_logger.info(f'Running simulation {i + 1} / {N} ("{sim_params_indiv.affix}")')
+            poly_logger.info(f'Running simulation "{self.sim_params.affix}"')
 
-                # initialize OpenFF Interchange from Molecule
-                interchange = polymer.interchange(
-                    forcefield_path=sim_params_indiv.forcefield_path,
-                    charge_method=sim_params_indiv.charge_method,
-                    periodic=sim_params_indiv.periodic
-                )
+            # initialize OpenFF Interchange from Molecule
+            interchange = polymer.interchange(
+                forcefield_path=self.sim_params.forcefield_path,
+                charge_method=self.sim_params.charge_method,
+                periodic=self.sim_params.periodic
+            )
 
-                # Create ensemble-specific Simulation from Interchange 
-                sim_factory = EnsembleSimulationFactory.registry[sim_params_indiv.ensemble.upper()]() # case-insensitive check for simulation creators for the desired ensemble
-                simulation = sim_factory.create_simulation(interchange, sim_params=sim_params_indiv)
-                if (self.sequential) and (i != 0): # if sequential mode is enabled and the current simulation is not the first...
-                    poly_logger.info(f'Loading initial configuration from previous simulation "{polymer.newest_sim_dir.name}"')
-                    sim_paths, prev_sim_params = polymer.load_sim_paths_and_params(sim_dir=polymer.newest_sim_dir) # ...load the paths from the most recent simulation (i.e. the previous one in the batch) !NOTE! - CRITICAL that sim params are discarded here
-                    
-                    if prev_sim_params.save_state: # ... and instantiate the current simulation from its checkpoint file (must be converted to str, since OpenMM can't handle Path objects)
-                        simulation.loadState(str(sim_paths.checkpoint)) 
-                    else:
-                        simulation.loadCheckpoint(str(sim_paths.checkpoint)) 
+            # Create ensemble-specific Simulation from Interchange 
+            sim_factory = EnsembleSimulationFactory.registry[self.sim_params.ensemble.upper()]() # case-insensitive check for simulation creators for the desired ensemble
+            simulation = sim_factory.create_simulation(interchange, sim_params=self.sim_params)
 
-                # Create output folder, populate with simulation files, and integrate
-                sim_folder = polymer.make_sim_dir(affix=sim_params_indiv.affix)
-                run_simulation(simulation, sim_params=sim_params_indiv, output_folder=sim_folder, output_name=polymer.mol_name)
-                poly_logger.info('') # whitespace to provide breathing room
+            # Create output folder, populate with simulation files, and integrate
+            sim_folder = polymer.make_sim_dir(affix=self.sim_params.affix)
+            run_simulation(simulation, sim_params=self.sim_params, output_folder=sim_folder, output_name=polymer.mol_name)
 
         return polymer_fn
 
