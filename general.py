@@ -89,6 +89,12 @@ def aspath(path : Union[Path, str]) -> Path:
 		path = Path(path)
 	return path
 
+def asstrpath(strpath : Union[str, Path]) -> str:
+	'''Allow functions which expect strings paths to also accept Paths'''
+	if not isinstance(strpath, str):
+		strpath = str(strpath)
+	return strpath
+
 
 # Tools for iteration 
 def swappable_loop_order(iter1 : Iterable, iter2 : Iterable, swap : bool=False) -> Iterable[tuple[Any, Any]]:
