@@ -14,9 +14,10 @@ from rdkit import Chem
 
 from . import monomer
 from ..molutils.rdmol import rdprops
+from .monomer import is_linear, is_linear_homopolymer
 
 # Typing and subclassing
-from .exceptions import SubstructMatchFailedError
+from .exceptions import SubstructMatchFailedError, CrosslinkingError
 from ..extratypes import ResidueSmarts
 
 
@@ -41,6 +42,9 @@ def mbmol_from_mono_smarts(SMARTS : str) -> tuple[Compound, list[int]]:
 def build_linear_polymer(monomer_smarts : ResidueSmarts, DOP : int, add_Hs : bool=False, reverse_term_labels : bool=False) -> MBPolymer:
     '''Accepts a dict of monomer residue names and SMARTS (as one might find in a monomer JSON)
     and a degree of polymerization (i.e. chain length in number of monomers)) and returns an mbuild Polymer object'''
+    if not is_linear(monomer_smarts):
+        raise CrosslinkingError('Linear polymer building does not support non-linear monomer input')
+
     chain = MBPolymer() 
     term_labels = ['head', 'tail'] # mbuild requires distinct labels in order to include both term groups
     if reverse_term_labels:

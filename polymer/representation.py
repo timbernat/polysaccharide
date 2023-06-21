@@ -592,11 +592,15 @@ class Polymer:
     @property
     def oldest_sim_dir(self) -> Path:
         '''Return the least recent simulation subdir'''
+        if not self.chrono_sims:
+            raise NoSimulationsFoundError
         return self.chrono_sims[0]
 
     @property
     def newest_sim_dir(self) -> Path:
         '''Return the most recent simulation subdir'''
+        if not self.chrono_sims:
+            raise NoSimulationsFoundError
         return self.chrono_sims[-1]
     
     @property
