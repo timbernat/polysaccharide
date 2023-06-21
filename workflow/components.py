@@ -35,6 +35,7 @@ avail_sim_templates = ', '.join(
 # Polymer Imports
 from polysaccharide.general import hasunits, asiterable
 from polysaccharide.filetree import default_suffix
+from polysaccharide.molutils.pdb import pdb_water_atoms_to_hetatoms
 
 from polysaccharide.solvation.solvent import Solvent
 from polysaccharide.solvation import solvents as all_solvents
@@ -511,9 +512,11 @@ class TransferSimSnapshot(WorkflowComponent): # TODO : decompose this into cloni
             # replace clone's starting structure with new anneal structure
             poly_logger.info('Extracting final conformation from simulation')
             traj = polymer.load_traj(polymer.newest_sim_dir)
-            new_conf = traj[self.snapshot_idx]
+            new_conf_snapshot = traj[self.snapshot_idx]
+
             poly_logger.info('Applying new conformation to clone')
-            new_conf.save(conf_clone.structure_file) # overwrite the clone's structure with the new conformer
+            new_conf_snapshot.save(conf_clone.structure_file) # overwrite the clone's structure with the new conformer
+            pdb_water_atoms_to_hetatoms(conf_clone.structure_file) # ensure waters are correctly labelled as HETATM and that CONECT records exist
             
         return polymer_fn
 
