@@ -77,6 +77,9 @@ class WorkflowComponent(ABC):
         '''Brief name to label component'''
         ...
 
+    def __repr__(self) -> str:
+        return f'{self.__class__.__name__}(name={self.name}, desc={self.desc})'
+
     @abstractmethod
     def __init__(self, *args, **kwargs):
         ...
@@ -163,7 +166,7 @@ class Solvate(WorkflowComponent):
     desc = 'Solvate molecules in sets of 1 or more desired solvents'
     name = 'solvate'
 
-    def __init__(self, solvents : Iterable[Solvent], template_path : Path, exclusion : float=None, **kwargs):
+    def __init__(self, solvents : Union[Solvent, Iterable[Solvent]], template_path : Path, exclusion : float=None, **kwargs):
         if not solvents:
             raise ValueError('Must specify at least 1 solvent')
 
@@ -248,8 +251,8 @@ class BuildReducedStructures(WorkflowComponent):
         '''Create wrapper for handling in logger'''
         def polymer_fn(polymer : Polymer, poly_logger : logging.Logger) -> None:
             '''Builds new PDB structures of the desired size from the monomers of an existing Polymer'''
-            monomer_smarts = polymer.monomer_info.monomers # create copy to avoid popping from original
 
+            monomer_smarts = polymer.monomer_info.monomers # create copy to avoid popping from original
             if self.DOP: # NOTE : this only works as intended because of the exclusivity check during arg processing
                 max_chain_len = estimate_chain_len(monomer_smarts, DOP)
                 DOP = self.DOP
