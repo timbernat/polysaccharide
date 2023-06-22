@@ -6,6 +6,9 @@ import logging
 from .. import LOGGERS_MASTER
 from ..logutils import ProcessLogHandler
 
+# Generic imports
+from pathlib import Path
+
 # Typing and subclassing
 from typing import Iterable, Optional, Union
 
@@ -14,8 +17,7 @@ from .components import WorkflowComponent
 from .. import general
 
 from ..polymer.representation import Polymer
-from ..polymer.management import PolymerManager, PolymerFunction
-from ..polymer.filtering import MolFilter
+from ..polymer.management import PolymerFunction
 
 
 @general.generate_repr
@@ -71,15 +73,14 @@ class Process:
         return polymer_fn
     
     # EXECUTION AND DISPATCH
-    def execute(self, mgr : PolymerManager, sequential : bool=True, filters : Optional[Iterable[MolFilter]]=None,
-                loggers :  Union[logging.Logger, list[logging.Logger]]=LOGGERS_MASTER) -> None:
+    def execute(self, targ_mols : Iterable[Polymer], sequential : bool=True, log_output_dir : Path=Path.cwd(),
+                loggers : Union[logging.Logger, list[logging.Logger]]=LOGGERS_MASTER) -> None:
         '''
         Execute actions specified by Components over all molecules in a Collection
         If sequential, each action in order will be executed over all molecules before moving to the next action
         If non-sequential, all actions will be performed for the first molecule, then the next, and so on
         '''
         loggers = [self.logger] + loggers # create copy of loggers with presonal logger injected
-        targ_mols = mgr.filtered_by(filters=filters, as_dict=False)
 
         proc_iter = general.swappable_loop_order(
             general.progress_iter(targ_mols, key=lambda poly : poly.mol_proc_name),
@@ -88,7 +89,7 @@ class Process:
         )
 
         # if sequential:
-        with ProcessLogHandler(filedir=mgr.log_dir, loggers=loggers, proc_name=self.proc_name, timestamp=True) as msf_handler:
+        with ProcessLogHandler(filedir=log_output_dir, loggers=loggers, proc_name=self.proc_name, timestamp=True) as msf_handler:
             for (comp_str, comp), (poly_str, polymer) in proc_iter:
                 self.logger.info(f'Executing Component {comp_str} on Molecule {poly_str}')
                 poly_fn = comp.make_polymer_fn()
