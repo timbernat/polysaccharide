@@ -29,9 +29,9 @@ from openmm.unit import nanometer
 
 
 # Functions for creating Simulation (and related) objects
-def create_simulation(interchange : Interchange, integrator : Integrator, forces : Optional[Iterable[Force]]=None) -> Simulation:
+def create_simulation(interchange : Interchange, integrator : Integrator, forces : Optional[Iterable[Force]]=None, combine_nonbonded_forces : bool=True) -> Simulation:
     '''Specifies configuration for an OpenMM Simulation - Interchange load alows many routes for creation'''
-    openmm_sys = interchange.to_openmm(combine_nonbonded_forces=True) 
+    openmm_sys = interchange.to_openmm(combine_nonbonded_forces=combine_nonbonded_forces) 
     openmm_top = interchange.topology.to_openmm()
     openmm_pos = interchange.positions.m_as(offunit.nanometer) * nanometer
 
