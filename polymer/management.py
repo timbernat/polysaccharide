@@ -189,7 +189,7 @@ class PolymerManager:
 @dataclass
 class MolFilterBuffer:
     '''Class for eliminating boilerplate when filtering Polymer collection-based scripts via argparse'''
-    molecules : Optional[Iterable[str]] = None # base names of molecules to select for
+    molecules : Optional[list[str]] = None # base names of molecules to select for
     solvent   : Optional[bool] = None # whether to express a preference for having solvent
     charges   : Optional[bool] = None # whether to express a preference for having charges
         
@@ -208,6 +208,35 @@ class MolFilterBuffer:
             filters.append(filtering.is_solvated if self.solvent else filtering.is_unsolvated)
 
         return filters
+
+    @property
+    def _argstr_molecules(self) -> str:
+        '''Returns an argparse string for reinitializing to the current molecule state'''
+        if self.molecules is None:
+            return ''
+        return ' '.join(['--molecules'] + self.molecules)
+    
+    @property
+    def _argstr_solvent(self) -> str:
+        '''Returns an argparse string for reinitializing to the current solvent state'''
+        if self.solvent is None:
+            return ''
+        return f'--{"no-" if not self.solvent else ""}solvent'
+
+    @property
+    def _argstr_charges(self) -> str:
+        '''Returns an argparse string for reinitializing to the current charge state'''
+        if self.charges is None:
+            return ''
+        return f'--{"no-" if not self.charges else ""}charges'
+    
+    @property
+    def argstr(self) -> str:
+        '''The argument string which would reproduce the current MolFilterBuffer from argparse'''
+        return ' '.join(
+            getattr(self, f'_argstr_{attr_name}')
+                for attr_name in self.__class__.__dataclass_fields__.keys()
+        )
 
     @staticmethod
     def argparse_inject(parser : ArgumentParser) -> None:
