@@ -504,7 +504,7 @@ class TransferSimSnapshot(WorkflowComponent): # TODO : decompose this into cloni
             conf_clone = polymer.clone(
                 dest_dir=parent_dir,
                 clone_affix=self.clone_affix,
-                clone_solvent=True,
+                clone_solvent=(not self.remove_solvent), # only clone solvent if it is not being removed
                 clone_structures=True,
                 clone_monomers=True,
                 clone_charges=True,
