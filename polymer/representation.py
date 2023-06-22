@@ -38,7 +38,6 @@ LOGGER = logging.getLogger(__name__)
 from rdkit import Chem
 
 from openff.toolkit import ForceField
-from openff.interchange import Interchange
 from openff.toolkit.topology import Topology, Molecule
 
 from openmm.unit import angstrom, nanometer
@@ -637,7 +636,8 @@ class Polymer:
 
         self.assign_charges_by_lookup(charge_method) # assign relevant charges prior to returning molecule
         LOGGER.info(f'Creating SMIRNOFF Interchange for "{self.mol_name}" with forcefield "{forcefield_path.stem}"')
-        return Interchange.from_smirnoff(force_field=forcefield, topology=off_topology, charge_from_molecules=[self.offmol]) # package FF, topology, and molecule charges together and ship out
+
+        return forcefield.create_interchange(topology=off_topology, charge_from_molecules=[self.offmol]) # package FF, topology, and molecule charges together and ship out
         
     def load_sim_paths_and_params(self, sim_dir : Optional[Path]=None) -> tuple[SimulationPaths, SimulationParameters]:
         '''Takes a path to a simulation directory and returns the associated simulation file paths and parameters
