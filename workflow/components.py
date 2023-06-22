@@ -474,11 +474,12 @@ class TransferSimSnapshot(WorkflowComponent): # TODO : decompose this into cloni
     desc = 'Take the final frame of a simulation and generate a new Polymer with that frame as its PDB structure'
     name = 'transfer_struct'
 
-    def __init__(self, dest_dir : Optional[Path]=None, snapshot_idx : int=-1, clone_affix : str='clone', sim_dir_filters : Optional[Iterable[SimDirFilter]]=None, **kwargs):
+    def __init__(self, dest_dir : Optional[Path]=None, snapshot_idx : int=-1, clone_affix : str='clone', remove_solvent : bool=False, sim_dir_filters : Optional[Iterable[SimDirFilter]]=None, **kwargs):
         '''Define parameters for vacuum anneal, along with number of new conformers'''
         self.dest_dir = dest_dir
         self.snapshot_idx = snapshot_idx
         self.clone_affix = clone_affix
+        self.remove_solvent = remove_solvent
 
         if sim_dir_filters is None:
             sim_dir_filters = []
@@ -487,9 +488,10 @@ class TransferSimSnapshot(WorkflowComponent): # TODO : decompose this into cloni
     @staticmethod
     def argparse_inject(parser : ArgumentParser) -> None:
         '''Flexible support for instantiating addition to argparse in an existing script'''
-        parser.add_argument('-dest', '--dest_dir'   , help='Destination directory into which the structure-altered clone should be sent', type=Path)
-        parser.add_argument('-sid', '--snapshot_idx', help='Index of the frame of the vacuum anneal simulation to take as the new conformation (by default -1, i.e. the final frame)', type=int, default=-1)
-        parser.add_argument('-caf', '--clone_affix' , help='An additional descriptive string to add to the name of the resulting clone', default='clone')
+        parser.add_argument('-dest', '--dest_dir'    , help='Destination directory into which the structure-altered clone should be sent', type=Path)
+        parser.add_argument('-sid', '--snapshot_idx' , help='Index of the frame of the vacuum anneal simulation to take as the new conformation (by default -1, i.e. the final frame)', type=int, default=-1)
+        parser.add_argument('-caf', '--clone_affix'  , help='An additional descriptive string to add to the name of the resulting clone', default='clone')
+        parser.add_argument('-rs', '--remove_solvent', help='If set, will strip any solvent molecules from the trajectory frame before copying', action='store_true')
 
     def make_polymer_fn(self) -> PolymerFunction:
         '''Create wrapper for handling in logger'''
@@ -511,7 +513,7 @@ class TransferSimSnapshot(WorkflowComponent): # TODO : decompose this into cloni
             
             # replace clone's starting structure with new anneal structure
             poly_logger.info('Extracting final conformation from simulation')
-            traj = polymer.load_traj(polymer.newest_sim_dir)
+            traj = polymer.load_traj(polymer.newest_sim_dir, remove_solvent=self.remove_solvent)
             new_conf_snapshot = traj[self.snapshot_idx]
 
             poly_logger.info('Applying new conformation to clone')
