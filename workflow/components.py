@@ -448,7 +448,7 @@ class TrajectoryAnalysis(WorkflowComponent):
 
             for i, (sim_dir, (sim_paths, sim_params)) in enumerate(sim_dirs_to_analyze.items()):
                 poly_logger.info(f'Found trajectory {sim_paths.trajectory} ({i + 1}/{N})')
-                traj = polymer.load_traj(sim_dir)
+                traj = polymer.load_traj(sim_dir, remove_solvent=True) # will run out of memory if solvent is not removed
 
                 # save and plot RDF data
                 poly_logger.info('Calculating pairwise radial distribution functions')
