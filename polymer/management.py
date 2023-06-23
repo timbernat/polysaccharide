@@ -198,7 +198,7 @@ class MolFilterBuffer:
         '''Generates list of relevant filters based on current setting'''
         filters = []
         if self.molecules: # NOTE : not explicitly checking for NoneType, as empty iterables should also be skipped
-            is_desired_mol = filter_factory_by_attr('base_mol_name', lambda name : name in self.molecules)
+            is_desired_mol = filter_factory_by_attr('mol_name', lambda name : name in self.molecules)
             filters.append(is_desired_mol)
 
         if self.charges is not None:
