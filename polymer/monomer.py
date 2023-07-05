@@ -89,8 +89,8 @@ def unique_monomers(monomer_smarts : ResidueSmarts) -> set[str]:
     unique_mono = set()
     for SMARTS in monomer_smarts.values():
         rdmol = Chem.MolFromSmarts(SMARTS)
-        rdprops.clear_atom_map_nums(rdmol)
-        rdprops.hydrogenate_rdmol_ports(rdmol)
+        rdprops.clear_atom_map_nums(rdmol, in_place=True) 
+        rdprops.hydrogenate_rdmol_ports(rdmol, in_place=True) 
         unique_mono.add(Chem.MolToSmiles(rdmol)) # TODO : eventually make this SMART-based (or even better RDMol-based); can't for now since hydrogenated fragments don't equate
 
     return unique_mono
