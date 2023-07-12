@@ -26,12 +26,13 @@ def mbmol_from_mono_smarts(SMARTS : str) -> tuple[Compound, list[int]]:
     orig_rdmol = Chem.MolFromSmarts(SMARTS)
     orig_port_ids = rdprops.get_port_ids(orig_rdmol) # record indices of ports
     rdprops.hydrogenate_rdmol_ports(orig_rdmol, in_place=True) # replace ports with Hs to give complete fragments
-    mono_smiles = Chem.MolToSmiles(orig_rdmol) # NOTE : CRITICAL that this be done AFTER hydrogenation (to avoid having ports in SMILES, which mbuild doesn;t know how to handle)
+    mono_smiles = Chem.MolToSmiles(orig_rdmol) # NOTE : CRITICAL that this be done AFTER hydrogenation (to avoid having ports in SMILES, which mbuild doesn't know how to handle)
     
     mb_compound = mb.load(mono_smiles, smiles=True)
     mb_ordered_rdmol = Chem.MolFromSmiles(mb_compound.to_smiles()) # create another molecule which has the same atom ordering as the mbuild Compound
     mb_ordered_rdmol = Chem.AddHs(mb_ordered_rdmol) # mbuild molecules don't have explicit Hs when converting to SMILES (although luckily AddHs adds them in the same order)
-    
+    Chem.Kekulize(mb_ordered_rdmol, clearAromaticFlags=True) # need to kekulize in order for aromatic bonds to be properly substructure matched (otherwise, ringed molecules are unsupported)
+
     mb_isomorphism = mb_ordered_rdmol.GetSubstructMatch(orig_rdmol) # determine mapping between original and mbuild atom indices
     if not mb_isomorphism: # ensure that the structures were in fact able to be matched before attempting backref map
         raise SubstructMatchFailedError
