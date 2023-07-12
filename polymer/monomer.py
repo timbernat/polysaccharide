@@ -46,7 +46,6 @@ class MonomerInfo(JSONifiable):
         #         continue # ...this is needed as explicit NoneType breaks charge assignment in graph match (expects dict, even if empty)
         #     else:
         #         ser_jdict[key] = value
-
         return ser_jdict # no special serialization needed (writing to JSON already handles numeric-to-str conversion)
     
     def unserialize_json_dict(ser_jdict : dict[str, JSONSerializable]) -> dict[Any, Union[ResidueSmarts, ResidueChargeMap]]:
@@ -80,8 +79,6 @@ class MonomerInfo(JSONifiable):
             )
 
     __radd__ = __add__ # support reverse addition
-
-    ## TODO : implement content-aware merge method
 
 # Functions for estimating chain parameters from monomer info
 def unique_monomers(monomer_smarts : ResidueSmarts) -> set[str]:
