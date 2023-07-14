@@ -52,7 +52,7 @@ from polysaccharide.polymer.management import PolymerManager, PolymerFunction, M
 from polysaccharide.polymer.filtering import MolFilter, has_sims, has_monomers_chgd, is_base
 from polysaccharide.polymer.filtering import SimDirFilter, has_binary_traj
 
-from polysaccharide.polymer.monomer import estimate_max_DOP, estimate_chain_len
+from polysaccharide.polymer.monomer import estimate_DOP_lower, estimate_chain_len
 from polysaccharide.polymer.building import build_linear_polymer
 from polysaccharide.polymer.exceptions import ExcessiveChainLengthError
 
@@ -260,7 +260,7 @@ class BuildReducedStructures(WorkflowComponent):
 
             if self.max_chain_len:
                 max_chain_len = self.max_chain_len
-                DOP = estimate_max_DOP(monomer_smarts, max_chain_len)
+                DOP = estimate_DOP_lower(monomer_smarts, max_chain_len)
             
             if max_chain_len > self.chain_len_limit:
                 raise ExcessiveChainLengthError(f'Cannot create reduction with over {self.chain_len_limit} atoms (requested {max_chain_len})')

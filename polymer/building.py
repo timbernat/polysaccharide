@@ -68,5 +68,5 @@ def build_linear_polymer(monomer_smarts : ResidueSmarts, DOP : int, add_Hs : boo
 
 def build_linear_polymer_limited(monomer_smarts : ResidueSmarts, max_chain_len : int, **build_args):
     '''Build a linear polymer which is no longer than the specified chain length'''
-    DOP = monomer.estimate_max_DOP(monomer_smarts, max_chain_len=max_chain_len) # will raise error if length is unsatisfiable
+    DOP = monomer.estimate_DOP_lower(monomer_smarts, max_chain_len=max_chain_len) # will raise error if length is unsatisfiable
     return build_linear_polymer(monomer_smarts, DOP=DOP, **build_args)

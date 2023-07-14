@@ -135,7 +135,7 @@ def is_linear_homopolymer(monomer_smarts : ResidueSmarts) -> bool:
 def estimate_chain_len(monomer_smarts : ResidueSmarts, DOP : int) -> int:
     '''Given a set of monomers and the desired degree of polymerization, estimate the length of the resulting chain
     !NOTE! : As-implemented, only works for linear homopolymers and block copolymers with equal an distribution of monomers'''
-    # TOSELF : omitted logging for now, as it gets repeated on EVERY cycle in when called estimate_max_DOP
+    # TOSELF : omitted logging for now, as it gets repeated on EVERY cycle in when called estimate_DOP_lower
     num_mono = len(monomer_smarts)
 
     mono_term    = np.zeros(num_mono, dtype=bool) # terminality of each monomer (i.e. whether or not it is a term group)
@@ -161,7 +161,7 @@ def estimate_chain_len(monomer_smarts : ResidueSmarts, DOP : int) -> int:
     
     return N
 
-def estimate_max_DOP(monomer_smarts : ResidueSmarts, max_chain_len : int, min_DOP : int=3) -> int:
+def estimate_DOP_lower(monomer_smarts : ResidueSmarts, max_chain_len : int, min_DOP : int=3) -> int:
     '''Returns the largest DOP for a set of monomers which yields a chain no longer than the specified chain length'''
     base_chain_len = estimate_chain_len(monomer_smarts, min_DOP)
     if base_chain_len > max_chain_len: # pre-check when optimization is impossible
@@ -172,3 +172,7 @@ def estimate_max_DOP(monomer_smarts : ResidueSmarts, max_chain_len : int, min_DO
         DOP += 1
 
     return DOP
+
+def estimate_DOP_upper(monomer_smarts : ResidueSmarts, min_chain_len : int, min_DOP : int=3) -> int: # NOTE : as currently defined, this also subsumes the case when the estimate and calculated length are exactly equal
+    '''Returns the smallest DOP for a set of monomers which yields a chain no shorter than the specified chain length'''
+    return estimate_DOP_lower(monomer_smarts, min_chain_len, min_DOP=min_DOP) + 1 # by definition, this is just 1 monomer longer than the lower bound
