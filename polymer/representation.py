@@ -464,7 +464,7 @@ class Polymer:
             return cmol
     
     # Charge visualization
-    def compare_charges(self, charge_method_1 : str, charge_method_2 : str, *args, **kwargs) -> tuple[Figure, Axes]:
+    def compare_charges(self, charge_method_1 : str, charge_method_2 : str, *args, **kwargs) -> tuple[RDMol, Figure, Axes]:
         '''Plot a heat map showing the atomwise discrepancies in partial charges between any pair of registered charge sets'''
         chgd_offmol1 = self.charged_offmol_from_sdf(charge_method_1)
         chgd_offmol2 = self.charged_offmol_from_sdf(charge_method_2)
