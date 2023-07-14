@@ -78,5 +78,6 @@ def _dframe_splitter_factory(regex : str):
         return x_data, y_data
     return dframe_to_plot_data
 
-rdfs_to_plot_data  = _dframe_splitter_factory(regex='Radius')
-props_to_plot_data = _dframe_splitter_factory(regex='Time')
+rdfs_to_plot_data   = _dframe_splitter_factory(regex='Radius')
+props_to_plot_data  = _dframe_splitter_factory(regex='Time')
+states_to_plot_data = _dframe_splitter_factory(regex=r'\ATime \(') # ensures that 'Elapsed Time' and 'Time Remaining' are not caught by regex as x-data (need to have only 1 column)
