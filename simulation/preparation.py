@@ -73,9 +73,9 @@ def prepare_simulation_reporters(sim_paths : SimulationPaths, sim_params : Simul
     # for saving pdb frames and reporting state/energy data - NOTE : all file paths must be stringified for OpenMM
     TrajReporter = TRAJ_REPORTERS[sim_paths.trajectory.suffix] # look up reporter based on the desired trajectory output file format
     
-    traj_rep  = TrajReporter(file=str(sim_paths.trajectory), reportInterval=sim_params.record_freq)  # save frames at the specified interval
+    traj_rep  = TrajReporter(file=str(sim_paths.trajectory) , reportInterval=sim_params.record_freq)  # save frames at the specified interval
     check_rep = CheckpointReporter(str(sim_paths.checkpoint), reportInterval=sim_params.record_freq, writeState=sim_params.save_state)
-    state_rep = StateDataReporter(str(sim_paths.state_data), reportInterval=sim_params.record_freq, **sim_params.reported_state_data)
+    state_rep = StateDataReporter(str(sim_paths.state_data) , reportInterval=sim_params.record_freq, totalSteps=sim_params.num_steps, **sim_params.reported_state_data)
 
     return (traj_rep, check_rep, state_rep)
 
