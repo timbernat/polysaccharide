@@ -106,6 +106,11 @@ class PolymerManager:
     def polymers_list_by_size(self) -> list[Polymer]:
         '''Return all polymer directories in collection, ordered by molecule size'''
         return sorted(self.polymers_list, key=lambda mdir : mdir.n_atoms)
+    
+    @property
+    def unique_polymer_names(self) -> set[str]:
+        '''Get the names of all distinct polymer types present (ignoring solvation or other modifications)'''
+        return set(polymer.base_mol_name for polymer in self.polymers_list)
 
     @property
     def polymers(self) -> dict[str, Polymer]:
