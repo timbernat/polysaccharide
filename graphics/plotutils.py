@@ -1,5 +1,5 @@
 # Numeric processing and plotting
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 from pathlib import Path
 from PIL.Image import Image
 
@@ -102,3 +102,23 @@ def draw_colorbar(cmap_name : str, vmin : float, vmax : float, label : str, save
         plt.close()
 
     return cbar
+
+def label_discrete_cmap(cmap : Colormap, color_names : Iterable[str], hues_per_color : int=1) -> tuple[dict[str, tuple[int, int, int, int]], np.ndarray]:
+    '''Generate named labels for discrete colormaps (e.g. Qualitative colormaps)
+    Accepts the target Colormap, a collection of the unique colors present (in order), and the number of distinct hues per color
+    Returns a dict mapping the named colors, as well as an MxNx4 array of the RGBA colors which can be visualized as an image'''
+    n_color_types = len(color_names)
+    n_colors = n_color_types * hues_per_color
+    if hues_per_color > 1:
+        color_names = [f'{color}{i}' for color in color_names for i in range(hues_per_color)]
+
+    sample_points = np.linspace(1 / (2*n_colors), 1, num=n_colors) # start in middle of first bin, sample subsequent middles up to unity
+    color_samples = [cmap(sample) for sample in sample_points]
+
+    color_arr = np.array(color_samples).reshape(n_color_types, hues_per_color, 4) # assumes RGBA, as returned by calling matplotlib Colormaps
+    color_dict = {
+        color_name : rgba
+            for color_name, rgba in zip(color_names, color_samples)
+    }
+
+    return color_dict, color_arr
