@@ -1,14 +1,9 @@
 # Custom imports
 from .. import general, filetree
 from ..solvation.packmol import packmol_solvate_wrapper
-
 from ..charging.application import load_matched_charged_molecule
-
 from ..simulation.records import SimulationPaths, SimulationParameters
-
 from ..analysis.trajectory import load_traj
-from ..molutils.rdmol.rdcompare import compare_chgd_rdmols
-from ..molutils.rdmol.rdprops import assign_ordered_atom_map_nums
 
 from .exceptions import *
 from .monomer import MonomerInfo
@@ -462,16 +457,6 @@ class Polymer:
 
         if return_cmol:
             return cmol
-    
-    # Charge visualization
-    def compare_charges(self, charge_method_1 : str, charge_method_2 : str, *args, **kwargs) -> tuple[RDMol, Figure, Axes]:
-        '''Plot a heat map showing the atomwise discrepancies in partial charges between any pair of registered charge sets'''
-        chgd_offmol1 = self.charged_offmol_from_sdf(charge_method_1)
-        chgd_offmol2 = self.charged_offmol_from_sdf(charge_method_2)
-        chgd_rdmol1 = assign_ordered_atom_map_nums(chgd_offmol1.to_rdkit()) # ensure map numbers are present for correct matching
-        chgd_rdmol2 = assign_ordered_atom_map_nums(chgd_offmol2.to_rdkit()) # ensure map numbers are present for correct matching
-
-        return compare_chgd_rdmols(chgd_rdmol1, chgd_rdmol2, charge_method_1, charge_method_2, *args, **kwargs)
     
 # FILE POPULATION AND MANAGEMENT
     @staticmethod
