@@ -69,8 +69,8 @@ def hydrogenate_rdmol_ports(rdmol : RDMol) -> None:
 def assign_ordered_atom_map_nums(rdmol : RDMol) -> None:
     '''Assigns atom's id to its atom map number for all atoms in an RDmol'''
     for atom in rdmol.GetAtoms():
-        atom.SetAtomMapNum(atom.GetIdx()) # need atom map numbers to preserve positional mapping in SMARTS
-        # atom.SetAtomMapNum(atom.GetIdx() + 1) # need atom map numbers to preserve positional mapping in SMARTS; "+1" avoids mapping any atoms to 0
+        # atom.SetAtomMapNum(atom.GetIdx()) # need atom map numbers to preserve positional mapping in SMARTS
+        atom.SetAtomMapNum(atom.GetIdx() + 1) # need atom map numbers to preserve positional mapping in SMARTS; "+1" avoids mapping any atoms to 0
 
 @optional_in_place
 def clear_atom_map_nums(rdmol : RDMol) -> None:
