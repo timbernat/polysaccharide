@@ -66,14 +66,20 @@ def hydrogenate_rdmol_ports(rdmol : RDMol) -> None:
         rdmol.GetAtomWithIdx(port_id).SetAtomicNum(1)
 
 @optional_in_place    
-def assign_ordered_atom_map_nums(rdmol : RDMol) -> None:
-    '''Assigns atom's id to its atom map number for all atoms in an RDmol'''
+def assign_ordered_atom_map_nums(rdmol : RDMol, start_from : int=1) -> None:
+    '''Assigns atom's index as its atom map number for all atoms in an RDmol
+    Can optionally specify when to begin counting from (by default 1)'''
     for atom in rdmol.GetAtoms():
-        # atom.SetAtomMapNum(atom.GetIdx()) # need atom map numbers to preserve positional mapping in SMARTS
-        atom.SetAtomMapNum(atom.GetIdx() + 1) # need atom map numbers to preserve positional mapping in SMARTS; "+1" avoids mapping any atoms to 0
+        atom.SetAtomMapNum(atom.GetIdx() + start_from) # NOTE that starting from anything below 1 will cause an atom somewhere to be mapped to 0 (i.e. not mapped)
 
 @optional_in_place
 def clear_atom_map_nums(rdmol : RDMol) -> None:
     '''Removes atom map numbers from all atoms in an RDMol'''
     for atom in rdmol.GetAtoms():
         atom.SetAtomMapNum(0)
+
+@optional_in_place
+def clear_atom_isotopes(rdmol : RDMol) -> None:
+    '''Removes atom map numbers from all atoms in an RDMol'''
+    for atom in rdmol.GetAtoms():
+        atom.SetIsotope(0)
