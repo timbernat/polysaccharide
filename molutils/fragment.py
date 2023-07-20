@@ -11,7 +11,7 @@ from operator import xor
 # Cheminformatics
 from openff.toolkit import Molecule
 from rdkit import Chem
-from .rdmol.rdprops import hydrogenate_rdmol_ports
+from .rdmol.rdbond import hydrogenate_rdmol_ports
 
 
 # OpenFF-specific methods for obtaining fragment bond indices

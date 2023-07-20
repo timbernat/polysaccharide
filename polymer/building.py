@@ -13,7 +13,7 @@ from mbuild.lib.recipes.polymer import Polymer as MBPolymer
 from rdkit import Chem
 
 from . import monomer
-from ..molutils.rdmol import rdprops
+from ..molutils.rdmol import rdbond
 from .monomer import is_linear, is_linear_homopolymer
 
 # Typing and subclassing
@@ -24,8 +24,8 @@ from ..extratypes import ResidueSmarts
 def mbmol_from_mono_smarts(SMARTS : str) -> tuple[Compound, list[int]]:
     '''Accepts a monomer-spec-compliant SMARTS string and returns an mbuild Compound and a list of the indices of hydrogen ports'''
     orig_rdmol = Chem.MolFromSmarts(SMARTS)
-    orig_port_ids = rdprops.get_port_ids(orig_rdmol) # record indices of ports
-    rdprops.hydrogenate_rdmol_ports(orig_rdmol, in_place=True) # replace ports with Hs to give complete fragments
+    orig_port_ids = rdbond.get_port_ids(orig_rdmol) # record indices of ports
+    rdbond.hydrogenate_rdmol_ports(orig_rdmol, in_place=True) # replace ports with Hs to give complete fragments
     mono_smiles = Chem.MolToSmiles(orig_rdmol) # NOTE : CRITICAL that this be done AFTER hydrogenation (to avoid having ports in SMILES, which mbuild doesn't know how to handle)
     
     mb_compound = mb.load(mono_smiles, smiles=True)
