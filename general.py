@@ -2,14 +2,14 @@
 import re
 from datetime import datetime
 
-from itertools import product as cartesian_product
+from itertools import count, product as cartesian_product
 from functools import reduce
 from operator import mul
 from copy import deepcopy
 from pathlib import Path
 
 # Typing and Subclassing
-from typing import Any, Callable, Iterable, Optional, Union
+from typing import Any, Callable, Generator, Iterable, Optional, Union
 from dataclasses import dataclass
 
 # Units
@@ -38,6 +38,16 @@ for case, idx in _greek_start_idxs.items():
 def product(container : Iterable):
     '''Analogous to builtin sum()'''
     return reduce(mul, container)
+
+def int_complement(vals : Iterable[int], bounded : bool=False) -> Generator[int, None, None]:
+    '''Generate ordered non-negative integers which don't appear in a collection of integers'''
+    _max = max(vals) # cache maximum
+    for i in range(_max):
+        if i not in vals:
+            yield i
+
+    if not bounded: # keep counting past max if unbounded
+        yield from count(start=_max + 1, step=1)
 
 @dataclass
 class Accumulator:
