@@ -27,7 +27,7 @@ from rdkit import Chem
 @dataclass
 class MonomerInfo(JSONifiable):
     '''For representing monomer information according to the monomer specification <eventual citation>'''
-    monomers  : ResidueSmarts
+    monomers  : ResidueSmarts    = field(default_factory=dict)
     charges   : ResidueChargeMap = field(default_factory=dict)
 
     @property
