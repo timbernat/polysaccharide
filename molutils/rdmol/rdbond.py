@@ -1,8 +1,14 @@
 '''For handling bonding ports and bond order up- and down-conversion'''
 
-from .rdtypes import RDMol, RDAtom
+from typing import Iterable
+from itertools import combinations
+
+from rdkit import Chem
+from rdkit.Chem.rdchem import BondType
+
+from .rdtypes import RDMol, RWMol, RDAtom, RDBond
 from . import rdlabels
-from ...general import optional_in_place, int_complement
+from ...general import optional_in_place, int_complement, sliding_window
 
 
 # PORT FUNCTIONS
@@ -29,8 +35,35 @@ def hydrogenate_rdmol_ports(rdmol : RDMol) -> None:
 
 
 # BONDING FUNCTIONS
-from ...general import optional_in_place
-from .rdtypes import *
+def get_bonded_pairs(rdmol : RDMol, *atom_ids : Iterable[int]) -> dict[int, tuple[int, int]]:
+    '''Get bond and terminal atom indices of all bonds which exist between any pair of atoms in an indexed list'''
+    res = {}
+    
+    atom_id_pairs = combinations(atom_ids, 2)
+    for atom_id_pair in atom_id_pairs:
+        bond = rdmol.GetBondBetweenAtoms(*atom_id_pair)
+        if bond is not None:
+            res[bond.GetIdx()] = atom_id_pair
+    return res
+
+def get_bonded_pairs_by_map_nums(rdmol : RDMol, *atom_map_nums : Iterable[int]) -> dict[int, tuple[int, int]]:
+    '''Obtain bonded pair dict by atom map numbers instead of IDs'''
+    return get_bonded_pairs(rdmol, *rdlabels.atom_ids_by_map_nums(rdmol, *atom_map_nums))
+
+def get_bond_by_map_num_pair(rdmol : RDMol, map_num_pair : tuple[int, int]) -> RDBond:
+    '''Get the index of a bond spanning a pair of atoms with given pair of atom map numbers'''
+    return rdmol.GetBondBetweenAtoms(*rdlabels.atom_ids_by_map_nums(rdmol, *map_num_pair))
+
+def get_bond_id_by_map_num_pair(rdmol : RDMol, map_num_pair : tuple[int, int]) -> RDBond:
+    '''Get the index of a bond spanning a pair of atoms with given pair of atom map numbers'''
+    return get_bond_by_map_num_pair(rdmol, map_num_pair).GetIdx()
+
+def get_shortest_path_bonds(rdmol : RDMol, start_idx : int, end_idx : int) -> list[int]:
+    '''Returns bond indices along shortest path between two atoms in a Mol'''
+    return [
+        rdmol.GetBondBetweenAtoms(*atom_id_pair).GetIdx()
+            for atom_id_pair in sliding_window(Chem.GetShortestPath(rdmol, start_idx, end_idx), n=2)
+    ]
 
 ## bond order prechecks
 class BondOrderModificationError(Exception):
@@ -58,9 +91,9 @@ def increase_bond_order(rwmol : RWMol, *bond_atom_ids : list[int, int], prioriti
     # determine expected bond type after order increase (handle single-bond removal, specifically) 
     curr_bond = rwmol.GetBondBetweenAtoms(*bond_atom_ids)
     if curr_bond is None:
-        new_bond_type = Chem.BondType.SINGLE # with no pre-existing bond, simply add a single bond
+        new_bond_type = BondType.SINGLE # with no pre-existing bond, simply add a single bond
     else: 
-        new_bond_type = Chem.BondType.values[curr_bond.GetBondTypeAsDouble() + 1] # with pre-existing bond, need to get the next order up by numeric lookup
+        new_bond_type = BondType.values[curr_bond.GetBondTypeAsDouble() + 1] # with pre-existing bond, need to get the next order up by numeric lookup
         rwmol.RemoveBond(*bond_atom_ids) # also remove the existing bond for new bond creation
 
     # create new bond
@@ -84,8 +117,8 @@ def decrease_bond_order(rwmol : RWMol, *bond_atom_ids : list[int, int], dummyLab
     
     # determine expected bond type after order decrease (handle single-bond case, specifically) 
     curr_bond = rwmol.GetBondBetweenAtoms(*bond_atom_ids) # guaranteed to not be None by the bond_order_decreasable check at the start
-    new_bond_type = Chem.BondType.values[curr_bond.GetBondTypeAsDouble() - 1] # with pre-existing bond, need to get the next order up by numeric lookup
-    if new_bond_type == Chem.BondType.UNSPECIFIED:
+    new_bond_type = BondType.values[curr_bond.GetBondTypeAsDouble() - 1] # with pre-existing bond, need to get the next order up by numeric lookup
+    if new_bond_type == BondType.UNSPECIFIED:
         new_bond_type = None # explicitly set to NoneType if single bond is broken
 
     # remove existing bond; not single bond, replace with bond of new type
