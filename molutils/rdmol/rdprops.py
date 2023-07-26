@@ -6,6 +6,8 @@ from typing import Any, Union
 from .rdtypes import RDMol, RDAtom
 from openff.toolkit.topology.molecule import Atom as OFFAtom
 
+# Custom imports
+from ...general import optional_in_place
 
 # For lookup of varoius C++ type-specific methods RDKit enforces
 RDPROP_GETTERS = {
@@ -55,3 +57,11 @@ def aggregate_atom_prop(rdmol : RDMol, prop : str, prop_type : type=str) -> list
         getattr(atom, getter_type)(prop)
             for atom in rdmol.GetAtoms()
     ]
+
+# PROPERTY REMOVAL FUNCTIONS
+@optional_in_place
+def clear_atom_props(rdmol : RDMol) -> None:
+    '''Wipe properties of all atoms in a molecule'''
+    for atom in rdmol.GetAtoms():
+        for prop_name in atom.GetPropNames():
+            atom.ClearProp(prop_name)
