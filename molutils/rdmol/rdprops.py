@@ -40,6 +40,14 @@ def copy_atom_metadata(offatom : OFFAtom, rdatom : RDAtom, preserve_type : bool=
             setter(key, value) # pass key and value to setter method
 
 # PROPERTY INSPECTION FUNCTIONS
+def atom_ids_with_prop(rdmol : RDMol, prop_name : str) -> list[int]:
+    '''Returns list of atom IDs of atom which have a particular property assigned'''
+    return [
+        atom.GetIdx()
+            for atom in rdmol.GetAtoms()
+                if atom.HasProp(prop_name)
+    ]
+
 def aggregate_atom_prop(rdmol : RDMol, prop : str, prop_type : type=str) -> list[Any]:
     '''Collects the values of a given Prop across all atoms in an RDKit molecule'''
     getter_type = RDPROP_GETTERS[prop_type]
