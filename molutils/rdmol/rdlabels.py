@@ -1,10 +1,9 @@
 '''For reading, writing, and querying atom map and isotope numbers in RDKit Atoms and Mols'''
 
 from typing import Callable, Generator, Iterable, Optional, Union
-from itertools import combinations
 
 from .rdtypes import RDMol, RDAtom
-from polysaccharide.general import optional_in_place
+from ...general import optional_in_place
 
 
 # READING FUNCTIONS
@@ -29,11 +28,12 @@ def atom_ids_by_map_nums(rdmol : RDMol, *query_map_nums : list[int]) -> Generato
         except ValueError: # if the provided map number is not found, return NoneType
             yield None
 
+
 # WRITING FUNCTIONS
 @optional_in_place    
 def assign_ordered_atom_map_nums(rdmol : RDMol, start_from : int=1) -> None:
     '''Assigns atom's index as its atom map number for all atoms in an RDmol
-    Can optionally specify when to begin counting from (by default 1)'''
+    Can optionally specify what value to begin counting from (by default 1)'''
     for atom in rdmol.GetAtoms():
         atom.SetAtomMapNum(atom.GetIdx() + start_from) # NOTE that starting from anything below 1 will cause an atom somewhere to be mapped to 0 (i.e. not mapped)
 
@@ -42,6 +42,21 @@ def assign_atom_map_nums_from_ref(rdmol : RDMol, ref : Iterable[int]) -> None:
     '''Assigns atom map numbers using an external collection of values'''
     for atom, map_num in zip(rdmol.GetAtoms(), ref): # TODO : add some way to check that lengths match (may be generator-like)
         atom.SetAtomMapNum(map_num) 
+
+def assign_contiguous_atom_map_nums(*rdmols : Iterable[RDMol], start_from : int=1, in_place : bool=False) -> Optional[list[RDMol]]: 
+    '''Assign sequential numbering to a collection of molecules such that their map numbers span a contiguous range of integers
+    Can optionally specify what value to begin counting from (by default 1)'''
+    new_mols = []
+
+    map_num_counter = start_from # initialize index tracker with starting index
+    for rdmol in rdmols:
+        new_mol = assign_ordered_atom_map_nums(rdmol, start_from=map_num_counter, in_place=in_place) # note : will be assigned NoneType if in-place
+        if not in_place:
+            new_mols.append(new_mol)
+        map_num_counter += rdmol.GetNumAtoms()
+
+    if new_mols:
+        return new_mols
 
 # CLEARING FUNCTIONS
 @optional_in_place
@@ -56,17 +71,6 @@ def clear_atom_isotopes(rdmol : RDMol) -> None:
     for atom in rdmol.GetAtoms():
         atom.SetIsotope(0)
 
-# BONDING INFO
-def get_bonded_pairs(rdmol : RDMol, *atom_ids : Iterable[int]) -> dict[int, tuple[int, int]]:
-    '''Get bond and terminal atom indices of all bonds which exist between any pair of atoms in an indexed list'''
-    res = {}
-    
-    atom_id_pairs = combinations(atom_ids, 2)
-    for atom_id_pair in atom_id_pairs:
-        bond = rdmol.GetBondBetweenAtoms(*atom_id_pair)
-        if bond is not None:
-            res[bond.GetIdx()] = atom_id_pair
-    return res
 
 # NEIGHBOR ATOM INFO
 def _neighbor_factory_by_condition(condition : Callable[[RDAtom], bool]) -> Callable[[RDAtom], Generator[RDAtom, None, None]]:
