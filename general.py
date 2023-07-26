@@ -2,14 +2,16 @@
 import re
 from datetime import datetime
 
-from itertools import count, product as cartesian_product
+from itertools import count, islice, product as cartesian_product
 from functools import reduce
+from collections import deque
+
 from operator import mul
 from copy import deepcopy
 from pathlib import Path
 
 # Typing and Subclassing
-from typing import Any, Callable, Generator, Iterable, Optional, Union
+from typing import Any, Callable, Generator, Iterable, Optional, TypeVar, Union
 from dataclasses import dataclass
 
 # Units
@@ -107,6 +109,19 @@ def asstrpath(strpath : Union[str, Path]) -> str:
 
 
 # Tools for iteration 
+T = TypeVar('T')
+def sliding_window(items : Iterable[T], n : int=1) -> Generator[tuple[T], None, None]:
+    '''Generates sliding windows of width n over an iterable collection of items
+    E.g. : sliding_window('ABCDE', 3) --> (A, B, C), (B, C, D), (C, D, E)
+    '''
+    it = iter(items)
+    window = deque(islice(it, n), maxlen=n)
+    if len(window) == n:
+        yield tuple(window)
+    for x in it:
+        window.append(x)
+        yield tuple(window)
+
 def swappable_loop_order(iter1 : Iterable, iter2 : Iterable, swap : bool=False) -> Iterable[tuple[Any, Any]]:
     '''Enables dynamic swapping of the order of execution of a 2-nested for loop'''
     order = [iter1, iter2] if not swap else [iter2, iter1]
