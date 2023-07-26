@@ -23,27 +23,38 @@ class RxnProductInfo:
     prod_num : int
     reactive_atom_map_nums : list[int] = field(default_factory=list)
 
-    new_bond_ids_and_map_nums : dict[int, tuple[int, int]] = field(default_factory=dict)
-    mod_bond_ids_and_map_nums : dict[int, tuple[int, int]] = field(default_factory=dict)
+    new_bond_ids_to_map_nums : dict[int, tuple[int, int]] = field(default_factory=dict)
+    mod_bond_ids_to_map_nums : dict[int, tuple[int, int]] = field(default_factory=dict)
     
 class AnnotatedReaction(rdChemReactions.ChemicalReaction):
-    '''RDKit ChemicalReaction with additional useful information about product atom and bond mappings'''
+    '''
+    RDKit ChemicalReaction with additional useful information about product atom and bond mappings
+
+    Initialization must be done either via AnnotatedReaction.from_smarts or AnnotatedReaction.from_rdmols,
+    asdirect override of pickling in __init__ method not yet implemented
+    '''
     @classmethod
-    def from_rdmols(cls, reactant_templates : Iterable[RDMol], product_templates : Iterable[RDMol]) -> 'AnnotatedReaction':
-        '''For instantiating reactions directly frommolecules instead of SMARTS strings'''
-        react_str = '.'.join(Chem.MolToSmarts(react_template) for react_template in reactant_templates)
-        prod_str  = '.'.join(Chem.MolToSmarts(prod_template) for prod_template in product_templates)
-        rxn_eqn = f'{react_str}>>{prod_str}'
-        rdrxn = rdChemReactions.ReactionFromSmarts(rxn_eqn)
+    def from_smarts(cls, rxn_smarts : str) -> 'AnnotatedReaction':
+        '''For instantiating reactions directly from molecules instead of SMARTS strings'''
+        rdrxn = rdChemReactions.ReactionFromSmarts(rxn_smarts)
 
         return cls(rdrxn) # pass to init method
+
+    @classmethod
+    def from_rdmols(cls, reactant_templates : Iterable[RDMol], product_templates : Iterable[RDMol]) -> 'AnnotatedReaction':
+        '''For instantiating reactions directly from molecules instead of SMARTS strings'''
+        react_str = '.'.join(Chem.MolToSmarts(react_template) for react_template in reactant_templates)
+        prod_str  = '.'.join(Chem.MolToSmarts(prod_template) for prod_template in product_templates)
+        rxn_smarts = f'{react_str}>>{prod_str}'
+
+        return cls.from_smarts(rxn_smarts)
 
     @cached_property
     def reacting_atom_map_nums(self) -> list[int]:
         '''List of the map numbers of all reactant atoms which participate in the reaction'''
         return [
-            self.GetReactantTemplate(react_num).GetAtomWithIdx(atom_id).GetAtomMapNum()
-                for react_num, reacting_atom_ids in enumerate(self.GetReactingAtoms())
+            self.GetReactantTemplate(reactant_id).GetAtomWithIdx(atom_id).GetAtomMapNum()
+                for reactant_id, reacting_atom_ids in enumerate(self.GetReactingAtoms())
                     for atom_id in reacting_atom_ids
         ]
     
@@ -76,9 +87,9 @@ class AnnotatedReaction(rdChemReactions.ChemicalReaction):
                 )
                 
                 if self.map_nums_to_reactant_nums[map_num_1] == self.map_nums_to_reactant_nums[map_num_2]: # if reactant IDs across bond match, the bond must have been modified (i.e. both from single reactant...)
-                    prod_info.mod_bond_ids_and_map_nums[bond_id] = map_num_pair
+                    prod_info.mod_bond_ids_to_map_nums[bond_id] = map_num_pair
                 else: # otherwise, bond must be newly formed (spans between previously disjoint monomers) 
-                    prod_info.new_bond_ids_and_map_nums[bond_id] = map_num_pair
+                    prod_info.new_bond_ids_to_map_nums[bond_id] = map_num_pair
             prod_info_map[i] = prod_info
         
         return prod_info_map
@@ -100,7 +111,7 @@ class Reactor:
         '''Check that the reaction schema provided is well defined and initialized'''
         pass
 
-    def _mark_reactants(self) -> None:
+    def _label_reactants(self) -> None:
         '''Assigns "reactant_idx" Prop to all reactants to help track where atoms go during the reaction'''
         for i, reactant in enumerate(self.reactants):
             for atom in reactant.GetAtoms():
@@ -109,11 +120,11 @@ class Reactor:
     def __post_init__(self) -> None:
         '''Pre-processing of reaction and reactant Mols'''
         self._activate_reaction()
-        self._mark_reactants()
+        self._label_reactants()
 
     # POST-REACTION CLEANUP METHODS
     @classmethod
-    def _remark_reacted_atoms(cls, product : RDMol, reactant_map_nums : dict[int, int]) -> None:
+    def _relabel_reacted_atoms(cls, product : RDMol, reactant_map_nums : dict[int, int]) -> None:
         '''Re-assigns "reactant_idx" Prop to modified reacted atoms to re-complete atom-to-reactant numbering'''
         for atom_id in rdprops.atom_ids_with_prop(product, 'old_mapno'):
             atom = product.GetAtomWithIdx(atom_id)
@@ -125,7 +136,7 @@ class Reactor:
     @staticmethod
     def _sanitize_bond_orders(product : RDMol, product_template : RDMol, product_info : RxnProductInfo) -> None:
         '''Ensure bond order changes specified by the reaction are honored by RDKit'''
-        for prod_bond_id, map_num_pair in product_info.mod_bond_ids_and_map_nums.items():
+        for prod_bond_id, map_num_pair in product_info.mod_bond_ids_to_map_nums.items():
             target_bond = product_template.GetBondWithIdx(prod_bond_id)
 
             product_bond = rdbond.get_bond_by_map_num_pair(product, map_num_pair)
@@ -136,7 +147,7 @@ class Reactor:
             product_bond.SetBondType(target_bond.GetBondType()) # set bond type to what it *should* be from the reaction schema
 
     # REACTION EXECUTION METHODS
-    def react(self, repetitions : int=1) -> None:
+    def react(self, repetitions : int=1, clear_props : bool=False) -> None:
         '''Execute reaction and generate product molecule'''
         self.products = [
             product # unroll nested tuples that RDKit provides as reaction products
@@ -146,11 +157,13 @@ class Reactor:
 
         # post-reaction cleanup
         for i, product in enumerate(self.products): # TODO : generalize to work when more than 1 repetition is requested
-            self._remark_reacted_atoms(product, self.rxn_schema.map_nums_to_reactant_nums)
+            self._relabel_reacted_atoms(product, self.rxn_schema.map_nums_to_reactant_nums)
             self._sanitize_bond_orders(product,
                 product_template=self.rxn_schema.GetProductTemplate(i),
                 product_info=self.rxn_schema.product_info_maps[i]
             )
+            if clear_props:
+                rdprops.clear_atom_props(product)
 
 @dataclass
 class CondensationReactor(Reactor):
@@ -183,7 +196,7 @@ class PolymerizationReactor(CondensationReactor):
         
         return [
             new_bond_id
-                for new_bond_id in self.product_info.new_bond_ids_and_map_nums.keys()  # for each newly formed bond...
+                for new_bond_id in self.product_info.new_bond_ids_to_map_nums.keys()  # for each newly formed bond...
                     for bridgehead_id_pair in combinations(possible_bridgehead_ids, 2) # ...find the most direct path between bridgehead atoms...
                         if new_bond_id in rdbond.get_shortest_path_bonds(self.product, *bridgehead_id_pair) # ...and check if the new bond lies along it
         ]
