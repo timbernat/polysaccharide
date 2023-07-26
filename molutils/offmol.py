@@ -1,3 +1,5 @@
+'''Tools for manipulating OpenFF Molecules objects'''
+
 # Typing and Subclassing
 from typing import Any, Callable
 
