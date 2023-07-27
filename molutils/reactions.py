@@ -54,9 +54,9 @@ class AnnotatedReaction(rdChemReactions.ChemicalReaction):
         return cls.from_smarts(rxn_smarts)
     
     @classmethod
-    def from_rxnfile(self, rxnfile_path : Union[str, Path]) -> 'AnnotatedReaction':
+    def from_rxnfile(cls, rxnfile_path : Union[str, Path]) -> 'AnnotatedReaction':
         '''For instantiating reactions directly from MDL .rxn files'''
-        return rdChemReactions.ReactionFromRxnFile(asstrpath(rxnfile_path))
+        return cls(rdChemReactions.ReactionFromRxnFile(asstrpath(rxnfile_path)))
 
     # I/O METHODS
     def to_rxnfile(self, rxnfile_path : Union[str, Path]) -> None:
