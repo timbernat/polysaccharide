@@ -2,8 +2,10 @@
 # Custom Imports
 from .rdmol import rdprops, rdbond, rdlabels
 from .rdmol.rdtypes import RDMol
+from ..general import asstrpath, aspath
 
 # Generic Imports
+from pathlib import Path
 from functools import cached_property
 from itertools import combinations, chain
 
@@ -33,9 +35,11 @@ class AnnotatedReaction(rdChemReactions.ChemicalReaction):
     Initialization must be done either via AnnotatedReaction.from_smarts or AnnotatedReaction.from_rdmols,
     asdirect override of pickling in __init__ method not yet implemented
     '''
+
+    # LOADING METHODS
     @classmethod
     def from_smarts(cls, rxn_smarts : str) -> 'AnnotatedReaction':
-        '''For instantiating reactions directly from molecules instead of SMARTS strings'''
+        '''For instantiating reactions from SMARTS strings'''
         rdrxn = rdChemReactions.ReactionFromSmarts(rxn_smarts)
 
         return cls(rdrxn) # pass to init method
@@ -48,7 +52,22 @@ class AnnotatedReaction(rdChemReactions.ChemicalReaction):
         rxn_smarts = f'{react_str}>>{prod_str}'
 
         return cls.from_smarts(rxn_smarts)
+    
+    @classmethod
+    def from_rxnfile(self, rxnfile_path : Union[str, Path]) -> 'AnnotatedReaction':
+        '''For instantiating reactions directly from MDL .rxn files'''
+        return rdChemReactions.ReactionFromRxnFile(asstrpath(rxnfile_path))
 
+    # I/O METHODS
+    def to_rxnfile(self, rxnfile_path : Union[str, Path]) -> None:
+        '''Save reaction to an MDL .RXN file. Replaces ports with R-groups to enable proper loading'''
+        rxn_block = rdChemReactions.ReactionToRxnBlock(self)
+        rxn_block = rxn_block.replace('*', 'R')
+
+        with aspath(rxnfile_path).open('w') as rxnfile:
+            rxnfile.write(rxn_block)
+
+    # RXN INFO METHODS
     @cached_property
     def reacting_atom_map_nums(self) -> list[int]:
         '''List of the map numbers of all reactant atoms which participate in the reaction'''
