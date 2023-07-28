@@ -1,5 +1,6 @@
 '''Tools for defining, modelling, and executing chemical reactions'''
 # Custom Imports
+from polysaccharide.molutils.rdmol.rdtypes import RDMol
 from .rdmol import rdprops, rdbond, rdlabels
 from .rdmol.rdtypes import RDMol
 from ..general import asstrpath, aspath
@@ -10,12 +11,13 @@ from functools import cached_property
 from itertools import combinations, chain
 
 # Typing and Subclassing
-from typing import ClassVar, Iterable, Optional, Union
+from typing import ClassVar, Generator, Iterable, Optional, Union
 from dataclasses import dataclass, field
 
 # Cheminformatics
 from rdkit import Chem
 from rdkit.Chem import rdChemReactions
+from IPython.display import display
 
 
 # REACTION INFORMATICS CLASSES
@@ -119,10 +121,8 @@ class AnnotatedReaction(rdChemReactions.ChemicalReaction):
 class Reactor:
     '''Class for executing a reaction template on collections of RDMol "reactants"'''
     rxn_schema : AnnotatedReaction
-    reactants : Iterable[RDMol]
-    products  : Optional[Iterable[RDMol]] = field(init=False, default=None)
-    _has_reacted : bool = field(init=False, default=False)
 
+    _has_reacted : bool = field(init=False, default=False)
     _ridx_prop_name : ClassVar[str] = field(init=False, default='reactant_idx') # name of the property to assign reactant indices to; set for entire class
 
     # PRE-REACTION PREPARATION METHODS
@@ -130,16 +130,16 @@ class Reactor:
         '''Check that the reaction schema provided is well defined and initialized'''
         pass
 
-    def _label_reactants(self) -> None:
-        '''Assigns "reactant_idx" Prop to all reactants to help track where atoms go during the reaction'''
-        for i, reactant in enumerate(self.reactants):
-            for atom in reactant.GetAtoms():
-                atom.SetIntProp(self._ridx_prop_name, i)
-
     def __post_init__(self) -> None:
         '''Pre-processing of reaction and reactant Mols'''
         self._activate_reaction()
-        self._label_reactants()
+
+    @classmethod
+    def _label_reactants(cls, reactants : Iterable[RDMol]) -> None:
+        '''Assigns "reactant_idx" Prop to all reactants to help track where atoms go during the reaction'''
+        for i, reactant in enumerate(reactants):
+            for atom in reactant.GetAtoms():
+                atom.SetIntProp(cls._ridx_prop_name, i)
 
     # POST-REACTION CLEANUP METHODS
     @classmethod
@@ -166,23 +166,26 @@ class Reactor:
             product_bond.SetBondType(target_bond.GetBondType()) # set bond type to what it *should* be from the reaction schema
 
     # REACTION EXECUTION METHODS
-    def react(self, repetitions : int=1, clear_props : bool=False) -> None:
-        '''Execute reaction and generate product molecule'''
-        self.products = [
-            product # unroll nested tuples that RDKit provides as reaction products
-                for product in chain.from_iterable(self.rxn_schema.RunReactants(self.reactants, maxProducts=repetitions))
-        ]
-        self._has_reacted = True # set reaction flag
-
+    def react(self, reactants : Iterable[RDMol], repetitions : int=1, clear_props : bool=False) -> list[RDMol]:
+        '''Execute reaction over a collection of reactants and generate product molecule(s)'''
+        self._label_reactants(reactants) # assign reactant indices in-place
+        raw_products = self.rxn_schema.RunReactants(reactants, maxProducts=repetitions) # obtain unfiltered RDKit reaction output. TODO : generalize to work when more than 1 repetition is requested
+        
         # post-reaction cleanup
-        for i, product in enumerate(self.products): # TODO : generalize to work when more than 1 repetition is requested
+        products = []
+        for i, product in enumerate(chain.from_iterable(raw_products)): # clean up products into a usable form
             self._relabel_reacted_atoms(product, self.rxn_schema.map_nums_to_reactant_nums)
             self._sanitize_bond_orders(product,
                 product_template=self.rxn_schema.GetProductTemplate(i),
                 product_info=self.rxn_schema.product_info_maps[i]
             )
             if clear_props:
-                rdprops.clear_atom_props(product)
+                rdprops.clear_atom_props(product, in_place=True)
+
+            products.append(product)
+        self._has_reacted = True # set reaction flag
+        
+        return products
 
 @dataclass
 class CondensationReactor(Reactor):
@@ -194,37 +197,53 @@ class CondensationReactor(Reactor):
         return super().__post_init__()
     
     @property
-    def product(self) -> RDMol:
-        return self.products[0]
-    
-    @property
     def product_info(self) -> RDMol:
         return self.rxn_schema.product_info_maps[0]
+
+    def react(self, reactants : Iterable[RDMol], repetitions : int = 1, clear_props : bool = False) -> Optional[RDMol]:
+        products = super().react(reactants, repetitions, clear_props) # return first (and only) product as standalone molecule
+        if products:
+            return products[0]
 
 @dataclass
 class PolymerizationReactor(CondensationReactor):
     '''Reactor which handles monomer partitioning post-polymerization condensation reaction'''
-    def inter_monomer_bond_candidates(self, valid_backbone_atoms : tuple[str]=('C', 'N', 'O')) -> list[int]:
-        '''Returns the bond index of the most likely candidate for a newly-formed bond in the product which was formed between the reactants
+    def _inter_monomer_bond_candidates(self, product : RDMol, valid_backbone_atoms : tuple[str]=('C', 'N', 'O')) -> list[int]:
+        '''Returns the bond index of the most likely candidate for a newly-formed bond in a product which was formed between the reactants
         Can optionally define which atoms are valid as main-chain atoms (by default just CNO)'''
         possible_bridgehead_ids = [ # determine all atomic positions which are: 
             atom_id
-                for atom_id in rdprops.atom_ids_with_prop(self.product, 'was_dummy')           # 1) former ports (i.e. outside of monomers)
-                    if self.product.GetAtomWithIdx(atom_id).GetSymbol() in valid_backbone_atoms # 2) valid backbone atoms (namely, not hydrogens)
+                for atom_id in rdprops.atom_ids_with_prop(product, 'was_dummy')           # 1) former ports (i.e. outside of monomers)
+                    if product.GetAtomWithIdx(atom_id).GetSymbol() in valid_backbone_atoms # 2) valid backbone atoms (namely, not hydrogens)
         ]
         
         return [
             new_bond_id
                 for new_bond_id in self.product_info.new_bond_ids_to_map_nums.keys()  # for each newly formed bond...
                     for bridgehead_id_pair in combinations(possible_bridgehead_ids, 2) # ...find the most direct path between bridgehead atoms...
-                        if new_bond_id in rdbond.get_shortest_path_bonds(self.product, *bridgehead_id_pair) # ...and check if the new bond lies along it
+                        if new_bond_id in rdbond.get_shortest_path_bonds(product, *bridgehead_id_pair) # ...and check if the new bond lies along it
         ]
 
-    def polymerized_fragments(self, separate : bool=True) -> Union[RDMol, tuple[RDMol]]:
+    def polymerized_fragments(self, product :  RDMol, separate : bool=True) -> Union[RDMol, tuple[RDMol]]:
         '''Cut product on inter-monomer bond, returning the resulting fragments'''
-        clean_product = rdlabels.clear_atom_map_nums(self.product, in_place=False)
-        fragments = Chem.FragmentOnBonds(clean_product, bondIndices=[self.inter_monomer_bond_candidates()[0]])
+        fragments = Chem.FragmentOnBonds(
+            rdlabels.clear_atom_map_nums(product, in_place=False), # fragment unmapped copy of product for clarity 
+            bondIndices=[self._inter_monomer_bond_candidates(product)[0]] # take first candidate bond index
+        )
 
         if separate:
             return Chem.GetMolFrags(fragments, asMols=True)
         return fragments # if separation is not requested, return as single fragmented molecule object
+    
+    def propagate(self, monomers : Iterable[RDMol]) -> Generator[tuple[RDMol, tuple[RDMol]], None, None]:
+        '''Keep reacting and fragmenting a pair of monomers until all reactive sites have been reacted
+        Returns fragment pairs at each step of the chain propagation process'''
+
+        reactants = monomers # initialize reactive pair with monomers
+        while True:
+            dimer = self.react(reactants, repetitions=1, clear_props=False) # can't clear properties here, otherwise fragment finding won't work
+            if not dimer: # stop propagating once monomers can no longer react
+                break
+            reactants = self.polymerized_fragments(dimer, separate=True)
+            
+            yield dimer, reactants # yield the dimerized fragment and the 2 new reactive fragments
