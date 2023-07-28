@@ -4,7 +4,7 @@ from datetime import datetime
 
 from itertools import count, islice, product as cartesian_product
 from functools import reduce
-from collections import deque
+from collections import deque, defaultdict
 
 from operator import mul
 from copy import deepcopy
@@ -136,6 +136,10 @@ def progress_iter(itera : Iterable, key : Callable[[Any], str]=lambda x : x) -> 
 
 
 # Data containers / data structures
+def RecursiveDict() -> defaultdict:
+    '''Returns a defaultdict which can be recursively nested indefinitely'''
+    return defaultdict(lambda : RecursiveDict())
+
 @optional_in_place
 def modify_dict(path_dict : dict[Any, Any], modifier_fn : Callable[[Any, Any], tuple[Any, bool]]) -> None:
     '''Recursively modifies all values in a dict in-place according to some function'''
