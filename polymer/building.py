@@ -13,7 +13,7 @@ from mbuild.lib.recipes.polymer import Polymer as MBPolymer
 from rdkit import Chem
 
 from . import monomer
-from ..molutils.rdmol import rdbond
+from ..molutils.rdmol import rdbond, rdconvert
 from .monomer import is_linear, is_linear_homopolymer
 
 # Typing and subclassing
@@ -40,6 +40,19 @@ def mbmol_from_mono_smarts(SMARTS : str) -> tuple[Compound, list[int]]:
 
     return mb_compound, mb_port_ids
 
+def mbmol_from_mono_smarts2(SMARTS : str) -> tuple[Compound, list[int]]:
+    '''Accepts a monomer-spec-compliant SMARTS string and returns an mbuild Compound and a list of the indices of hydrogen ports
+    Alternative implementation which bypasses the unreliable substructure match (fails on aromatics even with Kekulization)'''
+    rdmol = Chem.MolFromSmarts(SMARTS)
+    rdmol = rdconvert.SMILESConverter().convert(rdmol)
+    Chem.SanitizeMol(rdmol)
+
+    port_ids = rdbond.get_port_ids(rdmol) # record indices of ports
+    prot_mol = rdbond.hydrogenate_rdmol_ports(rdmol, in_place=False) # replace ports with Hs to give complete fragments
+    mb_compound = mb.conversion.from_rdkit(prot_mol) # native from_rdkit() method actually appears to preserve atom ordering
+
+    return mb_compound, port_ids
+
 def build_linear_polymer(monomer_smarts : ResidueSmarts, DOP : int, sequence : str='A', add_Hs : bool=False, reverse_term_labels : bool=False) -> MBPolymer:
     '''Accepts a dict of monomer residue names and SMARTS (as one might find in a monomer JSON)
     and a degree of polymerization (i.e. chain length in number of monomers)) and returns an mbuild Polymer object'''
@@ -52,7 +65,10 @@ def build_linear_polymer(monomer_smarts : ResidueSmarts, DOP : int, sequence : s
         term_labels = term_labels[::-1]
 
     for (resname, SMARTS) in monomer_smarts.items():
-        mb_monomer, port_ids = mbmol_from_mono_smarts(SMARTS)
+        try: # attempt both methods for mbuild conversion
+            mb_monomer, port_ids = mbmol_from_mono_smarts(SMARTS)
+        except:
+            mb_monomer, port_ids = mbmol_from_mono_smarts2(SMARTS)
         
         if monomer.is_term_by_smarts(SMARTS):
             chain.add_end_groups(compound=mb_monomer, index=port_ids[0], label=term_labels.pop(), duplicate=False)
