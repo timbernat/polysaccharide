@@ -40,7 +40,7 @@ def mbmol_from_mono_smarts(SMARTS : str) -> tuple[Compound, list[int]]:
 
     return mb_compound, mb_port_ids
 
-def build_linear_polymer(monomer_smarts : ResidueSmarts, DOP : int, add_Hs : bool=False, reverse_term_labels : bool=False) -> MBPolymer:
+def build_linear_polymer(monomer_smarts : ResidueSmarts, DOP : int, sequence : str='A', add_Hs : bool=False, reverse_term_labels : bool=False) -> MBPolymer:
     '''Accepts a dict of monomer residue names and SMARTS (as one might find in a monomer JSON)
     and a degree of polymerization (i.e. chain length in number of monomers)) and returns an mbuild Polymer object'''
     if not is_linear(monomer_smarts):
@@ -60,7 +60,7 @@ def build_linear_polymer(monomer_smarts : ResidueSmarts, DOP : int, add_Hs : boo
             chain.add_monomer(compound=mb_monomer, indices=port_ids)
 
     LOGGER.info(f'Building linear polymer chain with {DOP} monomers ({monomer.estimate_chain_len(monomer_smarts, DOP)} atoms)')
-    chain.build(DOP - 2, add_hydrogens=add_Hs) # "-2" is to account for term groups (in mbuild, "n" is the number of times to replicate just the middle monomers)
+    chain.build(DOP - 2, sequence=sequence, add_hydrogens=add_Hs) # "-2" is to account for term groups (in mbuild, "n" is the number of times to replicate just the middle monomers)
     for atom in chain.particles():
         atom.charge = 0.0 # initialize all atoms as being uncharged (gets risk of pesky blocks of warnings)
 
