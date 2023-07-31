@@ -83,11 +83,11 @@ class EnsembleSimulationFactory(ABC):
 
     @classmethod
     @property
-    def registry(self) -> dict[str, 'EnsembleSimulationFactory']:
+    def registry(cls) -> dict[str, 'EnsembleSimulationFactory']:
         '''Easily accessible record of all available concrete ensemble implementations'''
         return {  
             ens_factory.ensemble : ens_factory
-                for ens_factory in EnsembleSimulationFactory.__subclasses__()
+                for ens_factory in cls.__subclasses__()
         }
 
 # Concrete implementations
