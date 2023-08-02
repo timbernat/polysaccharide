@@ -1,13 +1,14 @@
 # Generic Imports
 from ast import literal_eval
 from pathlib import Path
+import numpy as np
 
 # logging setup - will feed up to charging module parent logger
 import logging
 LOGGER = logging.getLogger(__name__)
 
 # Typing and subclassing
-from typing import Any
+from typing import Any, Iterable, Optional
 from abc import ABC, abstractmethod, abstractproperty
 from dataclasses import dataclass
 
@@ -83,11 +84,8 @@ def unserialize_monomer_json(ser_jdict : dict[str, JSONSerializable]) -> dict[An
     return unser_jdict
 
 # Molecule charging interface
-def generate_molecule_charges(mol : Molecule, toolkit : str='OpenEye Toolkit', partial_charge_method : str='am1bccelf10', force_match : bool=True) -> Molecule:
+def generate_molecule_charges(mol : Molecule, toolkit : str='OpenEye Toolkit', partial_charge_method : str='am1bccelf10', conformers : Optional[Iterable[np.ndarray]]=None, force_match : bool=True) -> Molecule:
     '''Takes a Molecule object and computes partial charges with AM1BCC using toolkit method of choice. Returns charged molecule'''
-    tk_reg = TOOLKITS.get(toolkit)
-    mol.assign_partial_charges(partial_charge_method=partial_charge_method, toolkit_registry=tk_reg)
-    charged_mol = mol # rename for clarity
 
     # charged_mol.generate_conformers( # get some conformers to run elf10 charge method. By default, `mol.assign_partial_charges`...
     #     n_conformers=10,             # ...uses 500 conformers, but we can generate and use 10 here for demonstration
@@ -96,6 +94,13 @@ def generate_molecule_charges(mol : Molecule, toolkit : str='OpenEye Toolkit', p
     #     toolkit_registry=tk_reg
     # ) # very slow for large polymers! 
 
+    mol.assign_partial_charges(
+        partial_charge_method=partial_charge_method,
+        toolkit_registry=TOOLKITS.get(toolkit),
+        use_conformers=conformers
+    )
+
+    charged_mol = mol # rename for clarity
     if force_match:
         for atom in charged_mol.atoms:
             assert(atom.metadata['already_matched'] == True)
