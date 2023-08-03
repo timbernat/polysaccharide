@@ -73,19 +73,16 @@ def generate_repr(cls : Optional[C]=None, disp_attrs : Optional[Iterable[str]]=N
     If collection of "disp_attrs" is provided, will display the values of <disp_attrs> for the object instance being represented in series
     If "disp_attrs" is NOT provided but "lookup_attr" is, disp_attrs will be looked up from the modified parent class
     '''
-    to_lookup : bool = False
     if disp_attrs is None: 
-        disp_attrs = [] # set to empty list to avoid mutable default. If a lookup value is provided, this will be replaced within the actual decorator
-        to_lookup = bool(lookup_attr is not None) # only case where lookup happens is when no attrs are provided NOTE : I know the "bool" is redundant, it's just there for clarity 
-            
+        disp_attrs = [] # set to empty list to avoid mutable default
+    
     def class_decorator(cls : C) -> C:
         '''The actual (argument-free) class decorator'''
-        if to_lookup: # NOTE : this lookup is done within the decorator, as there is no guarantee that a class will always be passed to a call on the outside scope
+        nonlocal disp_attrs # avoids multiple scope issues in disparate use cases (refers to the variable in the outermost scope)
+        if not disp_attrs and lookup_attr: # only use lookup if one is explicitly provided and no display attributes are provided
             assert(hasattr(cls, lookup_attr))
             disp_attrs = getattr(cls, lookup_attr) # if a lookup attribute is provided, lookup the attribute names within the class being modified
 
-        # NOTE : the attribute collection check below is done inside the class decorator (rather than the scope above)...
-        # ...to guarantee that a class is available for lookup regardless of call type 
         def _repr_generic(self) -> str:
             attr_str = ', '.join(f'{attr}={getattr(self, attr)}' for attr in disp_attrs)
             return f'{cls.__name__}({attr_str})'
