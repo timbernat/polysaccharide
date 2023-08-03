@@ -1,3 +1,10 @@
+'''Utilities for generating, storing, and applying partial charges to OpenFF Molecules'''
+
+# Custom imports
+from .. import TOOLKITS
+from ..filetree import JSONifiable, JSONSerializable
+from ..general import register_subclasses
+
 # Generic Imports
 from ast import literal_eval
 from pathlib import Path
@@ -10,9 +17,6 @@ LOGGER = logging.getLogger(__name__)
 from typing import Any
 from abc import ABC, abstractmethod, abstractproperty
 from dataclasses import dataclass
-
-from .. import TOOLKITS
-from ..filetree import JSONifiable, JSONSerializable
 
 from openff.toolkit.topology.molecule import Molecule
 
@@ -102,6 +106,7 @@ def generate_molecule_charges(mol : Molecule, toolkit : str='OpenEye Toolkit', p
         
     return charged_mol 
 
+@register_subclasses(key_attr='METHOD_NAME')
 class MolCharger(ABC):
     '''Base interface for defining various methods of generating and storing atomic partial charges'''
     @abstractproperty
@@ -137,8 +142,3 @@ class EspalomaCharger(MolCharger):
 
     def _charge_molecule(self, uncharged_mol : Molecule) -> Molecule:
         return generate_molecule_charges(uncharged_mol, toolkit='Espaloma Charge Toolkit', partial_charge_method='espaloma-am1bcc', force_match=True)
-
-CHARGER_REGISTRY = { # Keep a registry of all charger implementations for convenience
-    charger.METHOD_NAME : charger
-        for charger in MolCharger.__subclasses__()
-}

@@ -7,6 +7,7 @@ from .rdtypes import RDMol
 # Subclassing
 import copy
 from abc import ABC, abstractmethod, abstractproperty
+from ...general import register_subclasses
 
 # Cheminformatics
 from rdkit import Chem
@@ -14,6 +15,7 @@ from .rdprops import copy_rd_props
 from .rdlabels import assign_ordered_atom_map_nums
 
 
+@register_subclasses(key_attr='TAG')
 class RDConverter(ABC):
     '''For converting an existing RDKit Molecule to and from a particular format to gain new properties'''
     @abstractproperty
@@ -57,18 +59,11 @@ class JSONConverter(RDConverter):
     def convert(self, rdmol : RDMol) -> RDMol:
         return Chem.rdMolInterchange.JSONToMols(Chem.MolToJSON(rdmol))[0]
 
-
-# define registry for convenient lookup once all child classes are defined above
-RDCONVERTER_REGISTRY = { # keep easily accessible record of all available converter types
-    child.TAG : child()
-        for child in RDConverter.__subclasses__()
-}
-
 # functons for applying various converters to RDMols
 def flattened_rdmol(rdmol : RDMol, converter : Union[str, RDConverter]='SMARTS') -> RDMol:
     '''Returns a flattened version of an RDKit molecule for 2D representation'''
     if isinstance(converter, str): # simplifies external function calls (don't need to be aware of underlying RDConverter class explicitly)
-        converter = RDCONVERTER_REGISTRY[converter] # perform lookup if only name is passed
+        converter = RDConverter.subclass_registry[converter] # perform lookup if only name is passed
 
     orig_rdmol = copy.deepcopy(rdmol) # create copy to avoid mutating original
     assign_ordered_atom_map_nums(orig_rdmol) # need atom map numbers to preserve positional mapping in SMARTS
