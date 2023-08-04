@@ -82,7 +82,7 @@ def flattened_rdmol_legacy(rdmol : RDMol, converter : Union[str, RDConverter]='S
 def flattened_rdmol(rdmol : RDMol, converter : Union[str, RDConverter]='SMARTS') -> RDMol:
     '''Returns a flattened version of an RDKit molecule for 2D representation'''
     if isinstance(converter, str): # simplifies external function calls (don't need to be aware of underlying RDConverter class explicitly)
-        converter = RDCONVERTER_REGISTRY[converter] # perform lookup if only name is passed
+        converter = RDConverter.subclass_registry[converter] # perform lookup if only name is passed
 
     flat_mol = converter.convert(rdmol) # apply convert for format interchange
     atom_mapping = rdmol.GetSubstructMatch(flat_mol) # map 
@@ -91,6 +91,6 @@ def flattened_rdmol(rdmol : RDMol, converter : Union[str, RDConverter]='SMARTS')
     
     for orig_idx, new_atom in zip(atom_mapping, flat_mol.GetAtoms()):
         orig_atom = rdmol.GetAtomWithIdx(orig_idx)
-        rdprops.copy_rd_props(to_rdobj=new_atom, from_rdobj=orig_atom)
+        copy_rd_props(to_rdobj=new_atom, from_rdobj=orig_atom)
 
     return flat_mol
