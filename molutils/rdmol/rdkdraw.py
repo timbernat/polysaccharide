@@ -13,7 +13,7 @@ from ...graphics import imageutils, plotutils
 from rdkit.Chem.Draw import rdMolDraw2D, SimilarityMaps, MolsToGridImage, IPythonConsole
            
 
-def set_rdkdraw_size(dim : int, aspect : float):
+def set_rdkdraw_size(dim : int, aspect : float=1/1):
     '''Change image size and shape of RDMol images'''
     IPythonConsole.molSize = (int(aspect*dim), dim)   # Change image size
 

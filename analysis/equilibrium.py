@@ -1,14 +1,17 @@
 '''Utilities for assessing equilibration times and equilibrium averages of computed properties'''
 
-# typing and subclassing
+# Custom imports
+from ..general import register_subclasses
+
+# Typing and subclassing
 from abc import ABC, abstractstaticmethod
 
-# numeric and statistical processing
+# Numeric and statistical processing
 import numpy as np
 import ruptures as rpt
 from pymbar import timeseries
 
-
+@register_subclasses
 class EquilibriumDetector(ABC):
     '''Provides interface for various methods of determining equilibration in a property time series'''
     @abstractstaticmethod
@@ -33,8 +36,4 @@ class PyMBAREquilDetector(EquilibriumDetector):
     def equil_loc(series : np.ndarray, fast : bool=False) -> int:
         t, *_ = timeseries.detect_equilibration(series, fast=fast)
         return t
-
-EQUIL_DETECTOR_REGISTRY = {
-    equil_det.__name__ : equil_det
-        for equil_det in EquilibriumDetector.__subclasses__()
-}
+    

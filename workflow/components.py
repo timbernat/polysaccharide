@@ -33,14 +33,14 @@ avail_sim_templates = ', '.join(
 )
 
 # Polymer Imports
-from polysaccharide.general import hasunits, asiterable
+from polysaccharide.general import hasunits, asiterable, register_subclasses
 from polysaccharide.filetree import default_suffix
 from polysaccharide.molutils.pdb import pdb_water_atoms_to_hetatoms
 
 from polysaccharide.solvation.solvent import Solvent
 from polysaccharide.solvation import solvents as all_solvents
 
-from polysaccharide.charging.application import ChargingParameters, CHARGER_REGISTRY
+from polysaccharide.charging.application import ChargingParameters, MolCharger
 from polysaccharide.charging.averaging import get_averaged_residue_charges, AveragingCharger
 
 from polysaccharide.simulation.records import SimulationParameters
@@ -64,6 +64,7 @@ from openmm.unit import nanometer, angstrom # length
 
 
 # Base class
+@register_subclasses(key_attr='name')
 class WorkflowComponent(ABC):
     '''Base class for assembling serial and parallel set of actions over Polymers'''
     @abstractproperty
@@ -108,16 +109,6 @@ class WorkflowComponent(ABC):
     def assert_filter_prefs(self, molbuf : MolFilterBuffer) -> list[MolFilter]:
         '''Assert any additional preferences for filters beyond the default molecule filters'''
         return molbuf.filters # default to base filters
-
-    @classmethod
-    @property
-    def registry(cls) -> dict[str, 'WorkflowComponent']:
-        '''Name-indexed dict of all inherited Component implementations'''
-        return {
-            subcomp.name : subcomp
-                for subcomp in cls.__subclasses__()
-        }
-
 
 # Concrete child class implementations
 class DummyCalculation(WorkflowComponent):
@@ -301,7 +292,7 @@ class ChargeAssignment(WorkflowComponent):
 
             # 1) ENSURING CHARGES AND RELATED FILES FOR ALL BASE CHARGING METHODS EXIST
             for chg_method in self.chg_params.charge_methods:
-                chgr = CHARGER_REGISTRY[chg_method]()
+                chgr = MolCharger.subclass_registry[chg_method]()
                 polymer.assert_charges_for(chgr, return_cmol=False)
                 poly_logger.info('') # add gaps between charge method for breathing room
                 
@@ -552,7 +543,7 @@ class _SlurmSbatch(WorkflowComponent):
     @classmethod
     def process_argparse_args(self, args: Namespace) -> dict[Any, Any]:
         return {
-            'component' : WorkflowComponent.registry[args.component_name],
+            'component' : WorkflowComponent.subclass_registry[args.component_name],
             'sbatch_script' : default_suffix(args.sbatch_script, suffix='job'),
             'python_script_name' : args.python_script_name,
             'source_path' : args.source_path,

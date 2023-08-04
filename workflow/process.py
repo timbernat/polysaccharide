@@ -20,13 +20,13 @@ from ..polymer.representation import Polymer
 from ..polymer.management import PolymerFunction
 
 
-@general.generate_repr
+@general.generate_repr(lookup_attr='DISP_ATTRS')
 class Process:
     '''For defining control flow, logging, and execution of sets of Component tasks'''
     
     # SETUP
     def __init__(self, components : Union[WorkflowComponent, Iterable[WorkflowComponent]]=None, proc_name : str='') -> None:
-        self.components = [] # distinct from __init__components, stored running set of Components as Process is setup and modified
+        self.components = [] # distinct from __init__'s components, stored running set of Components as Process is setup and modified
         if components is None:
             components = []
         self.add_components(components)
