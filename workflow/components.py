@@ -356,7 +356,7 @@ class RunSimulations(WorkflowComponent):
             )
 
             # Create ensemble-specific Simulation from Interchange 
-            sim_factory = EnsembleSimulationFactory.registry[self.sim_params.ensemble.upper()]() # case-insensitive check for simulation creators for the desired ensemble
+            sim_factory = EnsembleSimulationFactory.subclass_registry[self.sim_params.ensemble.upper()]() # case-insensitive check for simulation creators for the desired ensemble
             simulation = sim_factory.create_simulation(interchange, sim_params=self.sim_params)
 
             # Create output folder, populate with simulation files, and integrate

@@ -19,8 +19,10 @@ from openmm.app import Simulation
  # Custom Imports
 from .preparation import create_simulation
 from .records import SimulationParameters
+from ..general import register_subclasses
 
 
+@register_subclasses(key_attr='ensemble')
 class EnsembleSimulationFactory(ABC):
     '''Base class for implementing interface for generating ensemble-specific simulations'''
     # Abstract methods and properties
@@ -80,15 +82,6 @@ class EnsembleSimulationFactory(ABC):
         LOGGER.info(desc_str)
         
         return sim
-
-    @classmethod
-    @property
-    def registry(cls) -> dict[str, 'EnsembleSimulationFactory']:
-        '''Easily accessible record of all available concrete ensemble implementations'''
-        return {  
-            ens_factory.ensemble : ens_factory
-                for ens_factory in cls.__subclasses__()
-        }
 
 # Concrete implementations
 class NVESimulationFactory(EnsembleSimulationFactory):
