@@ -73,20 +73,6 @@ def load_matched_charged_molecule(sdf_path : Path, assume_ordered : bool=True) -
     cmol_matched.properties.pop('metadata') # remove metadata packed for notational cleanliness
     return cmol_matched
 
-def unserialize_monomer_json(ser_jdict : dict[str, JSONSerializable]) -> dict[Any, Any]:
-    '''For unserializing charged residue maps in charged monomer JSON files'''
-    unser_jdict = {}
-    for key, value in ser_jdict.items():
-        try: # TOSELF : need try-except instead of explicit check for "charges" key since objct hook is applied to ALL subdicts (not just main)
-            unser_jdict[key] = { # convert string-keyed indices and charges back to numeric types
-                int(substruct_id) : float(charge)
-                    for substruct_id, charge in value.items()
-            }
-        except (ValueError, AttributeError):
-            unser_jdict[key] = value
-    
-    return unser_jdict
-
 # Molecule charging interface
 def generate_molecule_charges(mol : Molecule, toolkit : str='OpenEye Toolkit', partial_charge_method : str='am1bccelf10', conformers : Optional[Iterable[np.ndarray]]=None, force_match : bool=True) -> Molecule:
     '''Takes a Molecule object and computes partial charges with AM1BCC using toolkit method of choice. Returns charged molecule'''
