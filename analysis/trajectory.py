@@ -32,7 +32,6 @@ def acquire_rdfs(traj : mdt.Trajectory, min_rad : float=0.0, max_rad : float=1.0
     rad_range = np.array([min_rad, max_rad]) * rad_unit
     elem_types = set(atom.element.symbol for atom in traj.topology.atoms)
     elem_pairs = list(combinations(elem_types, 2)) # every possible choice of 2 distinct atom types
-    print(rad_range._value)
 
     out_dframe = pd.DataFrame()
     for (elem1, elem2) in elem_pairs:
