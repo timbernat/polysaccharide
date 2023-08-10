@@ -1,4 +1,5 @@
 # Typing
+from typing import Optional
 from . import rdprops
 from .rdtypes import RDMol
 from ...graphics.named_colors import WHITE
@@ -36,7 +37,7 @@ def rdmol_prop_heatmap(rdmol : RDMol, prop : str, cmap : Colormap, norm : Normal
     
     return imageutils.img_from_bytes(img_bytes)
 
-def rdmol_prop_heatmap_colorscaled(rdmol : RDMol, prop : str, cmap : Colormap=plt.get_cmap('turbo'), cbar_label : str='', **heatmap_args) -> tuple[plt.Figure, plt.Axes]:
+def rdmol_prop_heatmap_colorscaled(rdmol : RDMol, prop : str, cmap : Colormap=plt.get_cmap('turbo'), cbar_label : str='', orient : Optional[str]=None, **heatmap_args) -> tuple[plt.Figure, plt.Axes]:
     '''Plot a labelled heatmap of the charge differences between 2 structurally identical RDKit Molecules with different partial charges'''
     prop_vals = rdprops.aggregate_atom_prop(rdmol, prop, prop_type=float) # explicitly ensure the property is interpreted as a numericla value
     vmin, vmax = min(prop_vals), max(prop_vals)
@@ -46,4 +47,4 @@ def rdmol_prop_heatmap_colorscaled(rdmol : RDMol, prop : str, cmap : Colormap=pl
     image = rdmol_prop_heatmap(rdmol, prop=prop, cmap=cmap, norm=norm, **heatmap_args)
     image = imageutils.crop_borders(image, bg_color=WHITE)
 
-    return plotutils.plot_image_with_colorbar(image, cmap, norm, label=cbar_label, ticks=ticks)
+    return plotutils.plot_image_with_colorbar(image, cmap, norm, label=cbar_label, ticks=ticks, orient=orient)

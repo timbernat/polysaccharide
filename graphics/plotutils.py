@@ -68,16 +68,20 @@ def make_cmapper(cmap_name : str, vmin : float, vmax : float) -> ColorMapper:
     
     return cmapper
 
-def plot_image_with_colorbar(image : Image, cmap : Colormap, norm : Normalize, label : str='', ticks : Optional[list[float]]=None, dim : int=8, aspect : float=1/1) -> tuple[plt.Figure, plt.Axes]:
+def plot_image_with_colorbar(image : Image, cmap : Colormap, norm : Normalize, label : str='', ticks : Optional[list[float]]=None, orient : Optional[str]=None, dim : int=8, aspect : float=1/1) -> tuple[plt.Figure, plt.Axes]:
     '''Plots a PIL image with a colorbar and norm of ones choice'''
-    fig, ax = plt.subplots(figsize=(dim, aspect*dim))
+    CAX_LOC_OPTIONS = {
+        'vertical' : 'right',
+        'horizontal' : 'bottom'
+    }
 
+    fig, ax = plt.subplots(figsize=(dim, aspect*dim))
     mpim = ax.imshow(image, cmap=cmap, norm=norm)
+
     width, height = image.size
-    if height > width:
-        cax_loc, orient = ('right', 'vertical')
-    else:
-        cax_loc, orient = ('bottom', 'horizontal')
+    if orient is None:
+        orient = 'vertical' if (height > width) else 'horizontal' # if no orientation is provided, place along longest axis
+    cax_loc = CAX_LOC_OPTIONS[orient] # will raise KeyError if invalid orientation is provided
 
     div = make_axes_locatable(ax) # allow for creatioin of separate colorbar axis
     ax.set_axis_off() # prevent ticks from interrupting image

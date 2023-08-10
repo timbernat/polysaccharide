@@ -75,19 +75,3 @@ def difference_rdmol(rdmol_1 : RDMol, rdmol_2 : RDMol, prop : str='PartialCharge
     diff_mol.SetDoubleProp(f'Delta{prop}Max', max(all_deltas)) # label maximal property value for ease of reference
 
     return diff_mol
-
-def compare_chgd_rdmols(chgd_rdmol_1 : RDMol, chgd_rdmol_2 : RDMol, chg_method_1 : str, chg_method_2 : str, cmap : Colormap=plt.get_cmap('turbo'),
-                         flatten : bool=True, converter : Union[str, rdconvert.RDConverter]='SMARTS', **heatmap_args) -> tuple[RDMol, plt.Figure, plt.Axes]:
-    '''Plot a labelled heatmap of the charge differences between 2 structurally identical RDKit Molecules with different partial charges'''
-    if flatten:
-        chgd_rdmol_1 = rdconvert.flattened_rdmol(chgd_rdmol_1, converter=converter)
-        chgd_rdmol_2 = rdconvert.flattened_rdmol(chgd_rdmol_2, converter=converter)
-    diff_rdmol = difference_rdmol(chgd_rdmol_1, chgd_rdmol_2)
-
-    return diff_rdmol, rdmol_prop_heatmap_colorscaled( # done in-line to avoid fig and axes from being displayed prematurely
-        rdmol=diff_rdmol,
-        prop='DeltaPartialCharge',
-        cmap=cmap,
-        cbar_label=f'{GREEK_UPPER["delta"]}q (elem. charge): {chg_method_1} vs {chg_method_2}',
-        **heatmap_args
-    )
