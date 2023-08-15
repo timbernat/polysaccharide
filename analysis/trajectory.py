@@ -2,6 +2,9 @@
 from .polyprops import PolyProp, DEFAULT_PROPS
 from ..general import hasunits, MissingUnitsError
 
+# Typing
+from typing import Iterable, Optional, TypeAlias
+
 # Generic Imports
 from itertools import combinations
 from pathlib import Path
@@ -25,20 +28,31 @@ def load_traj(traj_path : Path, topo_path : Path, sample_interval : int=1, remov
     
     return traj
 
+# Defining atom pairs over trajectories for computing RDFs
+PairDict : TypeAlias = dict[str, Iterable[tuple[int, int]]] # a dictionary with key-labelled arrays of atom index pairs
+
+def atom_pairs_by_element(traj : mdt.Trajectory) -> PairDict:
+    '''Returns a pair dict of atom IDs by each possible duo of distinct elements'''
+    unique_elem_types = set(atom.element.symbol for atom in traj.topology.atoms)
+    
+    return {
+        f'{elem1}-{elem2}' : traj.topology.select_pairs(f'element {elem1}', f'element {elem2}')
+            for (elem1, elem2) in combinations(unique_elem_types, 2) # every possible choice of 2 distinct atom types
+    }
+
 # Data output functions (mediated via DataFrames)
-def acquire_rdfs(traj : mdt.Trajectory, min_rad : float=0.0, max_rad : float=1.0, rad_unit : Unit=nanometer) -> pd.DataFrame:
+def acquire_rdfs(traj : mdt.Trajectory, pair_dict : Optional[PairDict]=None, min_rad : float=0.0, max_rad : float=1.0, rad_unit : Unit=nanometer) -> pd.DataFrame:
     '''Takes a Trajectory and produces a DataFrame for all possible pairwise Radial Distribution Functions,
     along with the radii sampled up to the specified maximum radius (must have units!)'''
     rad_range = np.array([min_rad, max_rad]) * rad_unit
-    elem_types = set(atom.element.symbol for atom in traj.topology.atoms)
-    elem_pairs = list(combinations(elem_types, 2)) # every possible choice of 2 distinct atom types
+    if pair_dict is None:
+        pair_dict = atom_pairs_by_element(traj)
 
     out_dframe = pd.DataFrame()
-    for (elem1, elem2) in elem_pairs:
-        atom_id_pairs = traj.topology.select_pairs(f'element {elem1}', f'element {elem2}')
+    for label, atom_id_pairs in pair_dict.items():
         rad_points, rdf = mdt.compute_rdf(traj, pairs=atom_id_pairs, r_range=rad_range._value)
         out_dframe[f'Radius ({rad_unit})'] = rad_points # NOTE : radii range will be same for all pairs, so overwrite beyond first RDF is OK
-        out_dframe[f'g(r) ({elem1}-{elem2})'] = rdf 
+        out_dframe[f'g(r) ({label})'] = rdf 
 
     return out_dframe
 
