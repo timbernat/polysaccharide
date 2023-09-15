@@ -1,0 +1,7 @@
+{
+    "overwrite_chg_mono": false,
+    "charge_methods": [
+        "Espaloma_AM1BCC"
+    ],
+    "averaging_charge_method": "Espaloma_AM1BCC"
+}
