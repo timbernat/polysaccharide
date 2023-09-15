@@ -32,6 +32,7 @@ def run_simulation(simulation : Simulation, sim_params : SimulationParameters, o
 
     LOGGER.info('Performing energy minimization')
     simulation.minimizeEnergy()
+    preparation.save_sim_snapshot(simulation, pdb_path=sim_paths.topology) # record minimized topology as starting point for trajectory
 
     LOGGER.info(f'Integrating {sim_params.total_time} OpenMM sim at {sim_params.temperature} and {sim_params.pressure} for {sim_params.num_steps} steps')
     simulation.step(sim_params.num_steps)

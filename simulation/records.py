@@ -114,6 +114,7 @@ class SimulationParameters(JSONifiable):
 class SimulationPaths(JSONifiable):
     '''Stores paths to various files associated with a completed MD simulation'''
     sim_params : Path
+    topology   : Path
     trajectory : Path
     state_data : Path = None
     checkpoint : Path = None

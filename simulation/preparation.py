@@ -16,7 +16,7 @@ from openff.interchange import Interchange
 
 from openmm import Integrator
 from openmm.openmm import Force
-from openmm.app import Simulation
+from openmm.app import Simulation, PDBFile
 
 from openmm.app import PDBReporter, DCDReporter, StateDataReporter, CheckpointReporter
 Reporter = Union[PDBReporter, DCDReporter, StateDataReporter, CheckpointReporter] # for clearer typehinting
@@ -46,13 +46,13 @@ def create_simulation(interchange : Interchange, integrator : Integrator, forces
     return simulation
 
 def prepare_simulation_paths(output_folder : Path, output_name : str, sim_params : SimulationParameters) -> SimulationPaths:
-    '''Takes a Simulation object, performs energy minimization, and runs simulation for specified number of time steps
-    Recording PDB frames and the specified property data to CSV at the specified frequency'''
+    '''Generate unified SimulationPaths object containing paths for reporting simulation topology, trajectory, state, and physical data'''
     # creating paths to requisite output files
     prefix = f'{output_name}{"_" if output_name else ""}'
     sim_paths_out = output_folder / f'{prefix}sim_paths.json'
     sim_paths = SimulationPaths(
         sim_params=output_folder / f'{prefix}sim_parameters.json',
+        topology  =output_folder / f'{prefix}top.pdb',
         trajectory=output_folder / f'{prefix}traj.{"dcd" if sim_params.binary_traj else "pdb"}',
         state_data=output_folder / f'{prefix}state_data.csv',
         checkpoint=output_folder / f'{prefix}checkpoint.{"xml" if sim_params.save_state else "chk"}',
@@ -63,8 +63,7 @@ def prepare_simulation_paths(output_folder : Path, output_name : str, sim_params
     return sim_paths
 
 def prepare_simulation_reporters(sim_paths : SimulationPaths, sim_params : SimulationParameters) ->  tuple[Reporter]:
-    '''Takes a Simulation object, performs energy minimization, and runs simulation for specified number of time steps
-    Recording PBD frames and the specified property data to CSV at the specified frequency'''
+    '''Add trajectory, checkpoint, and state data reporters to a simulation'''
     TRAJ_REPORTERS = { # index output formats of reporters by file extension
         '.dcd' : DCDReporter,
         '.pdb' : PDBReporter
@@ -80,10 +79,17 @@ def prepare_simulation_reporters(sim_paths : SimulationPaths, sim_params : Simul
     return (traj_rep, check_rep, state_rep)
 
 def config_simulation(simulation : Simulation, reporters : Iterable[Reporter], checkpoint_path : Optional[Path]=None) -> None:
-    '''Takes a Simulation object, adds data Reporters, saves an initial checkpoint, and performs energy minimization'''
+    '''Takes a Simulation object, adds data Reporters and saves an initial checkpoint'''
     for rep in reporters:
         simulation.reporters.append(rep) # add any desired reporters to simulation for tracking
 
     if checkpoint_path is not None:
         simulation.saveCheckpoint(str(checkpoint_path)) # save initial minimal state to simplify reloading process
         LOGGER.info(f'Saved simulation checkpoint at {checkpoint_path}')
+
+def save_sim_snapshot(simulation : Simulation, pdb_path : Path, keep_ids : bool=True) -> None:
+    '''Saves a PDB of the current state of a simulation's Topology'''
+    curr_state = simulation.context.getState(getPositions=True, getEnergy=True)
+    with pdb_path.open('w') as output:
+        PDBFile.writeFile(simulation.topology, curr_state.getPositions(), output, keepIds=keep_ids)
+        LOGGER.info(f'Saved snapshot of simulation topology at {pdb_path}')
