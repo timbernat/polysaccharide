@@ -518,7 +518,7 @@ class TransferSimSnapshot(WorkflowComponent): # TODO : decompose this into cloni
 
             poly_logger.info('Applying new conformation to clone')
             new_conf_snapshot.save(conf_clone.structure_file) # overwrite the clone's structure with the new conformer
-            pdb_water_atoms_to_hetatoms(conf_clone.structure_file) # ensure waters are correctly labelled as HETATM and that CONECT records exist
+            #pdb_water_atoms_to_hetatoms(conf_clone.structure_file) # ensure waters are correctly labelled as HETATM and that CONECT records exist
             
         return polymer_fn
 

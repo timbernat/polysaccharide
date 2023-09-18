@@ -613,7 +613,12 @@ class Polymer:
         off_topology = self.off_topology_matched() # self.off_topology
         if periodic: # set box vector to allow for periodic simulation (will be non-periodic if polymer box vectors are unset i.e. NoneType)
             off_topology.box_vectors = self.box_vectors.in_units_of(nanometer) 
-  
+
+        for mol in off_topology.molecules:
+            for atom in mol.atoms:
+                if atom.metadata.get('residue_number'):
+                    atom.metadata['residue_number'] = str(atom.metadata['residue_number']) # stringify residue numbers for compatibility with OpenMM PDBFile writers
+
         if self.solvent is None:
             forcefield = ForceField(forcefield_path) #, allow_cosmetic_attributes=True)
         else:
@@ -642,7 +647,7 @@ class Polymer:
             sim_dir = self.newest_sim_dir # use most recent simulation by default
 
         sim_paths, sim_params = self.load_sim_paths_and_params(sim_dir)
-        return load_traj(sim_paths.trajectory, topo_path=self.structure_file, **kwargs)
+        return load_traj(sim_paths.trajectory, topo_path=sim_paths.topology, **kwargs)
     
     def filter_sim_dirs(self, conditions : Union[SimDirFilter, Iterable[SimDirFilter]]) -> dict[Path, tuple[SimulationPaths, SimulationParameters]]:
         '''Returns all simulation directories which meet some binary condition based on their simulation file paths and/or the parameters with which the simulation was ran'''
